@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>击空明兮溯流光 - 梦幻粒子水月 (暗夜竹影版)</title>
+    <!-- 引入 p5.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <!-- 引入 dat.gui 参数面板库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #010204; display: flex;
+            justify-content: center; align-items: center; overflow: hidden;
+        }
+        canvas {
+            box-shadow: 0 0 60px rgba(10, 30, 45, 0.9);
+            border-radius: 4px;
+        }
+        .dg.ac {
+            top: 20px !important; right: 20px !important; z-index: 10 !important;
+        }
+    </style>
+</head>
+<body>
+<script>
+    let env, moonRef, floatingParticles, branch, globalTime = 0;
+    let ripples = [];
+    let moonImg = null;
+    let imgLoaded = false;
+
+    // 整合所有功能的全局参数
+    const PARAMS = {
+        brightness: 3.0, feather: 0.8, particleDensity: 0.9, denseArea: 0.54, centerDensity: 0.57,
+        particleSize: 1.0, particleSoftness: 0.35, haloIntensity: 0.96, haloSpread: 1.2,
+        topWaveAmp: 2.3, bottomWaveAmp: 12.0, waveFreq: 0.025, waveSpeed: 14.3, sphereShading: 0.75,
+        
+        waveLineBright: 45, waveLineDark: 2, 
+        crestDotFreq: 0.025, crestDotBright: 180, crestDotHalo: 14,
+        
+        // 暗夜竹枝专属参数
+        bambooColor: '#122b1c', 
+        jointLength: 50,        
+        branchThick: 7.0,       
+        leafDensity: 0.8,       
+        leafMinSize: 15,        
+        leafMaxSize: 35,        
+        branchAngle: -144,      
+        
+        // 新增：背景竹影系统参数
+        shadowCount: 8,         // 竹影树的数量
+        shadowMinSize: 40,      // 竹影初始最小分段长
+        shadowMaxSize: 90,      // 竹影初始最大分段长
+        
+        rippleIntensity: 20, wakeIntensity: 6,
+        
+        // 物理拖拽交互参数
+        dragRadius: 60,      
+        dragForce: 0.15,     
+        gatherSpeed: 0.04,   
+        dragProbability: 0.15, 
+        dragCluster: 30,
+        dropRate: 0.02       
+    };
+
+    const CONFIG = { w: 600, h: 800, colorTop: '#02050A', colorBottom: '#0D1E26', moonY: 480, moonRadius: 185, timeScale: 0.001 };
+
+    let bgShadows; // 新增全局变量存储背景竹影系统
+
+    function setup() {
+        let h = windowHeight > 0 ? windowHeight : (window.innerHeight || 800);
+        let canvasH = min(h * 0.95, 800);
+        let canvasW = canvasH * (3 / 4);
+        
+        canvasW = max(10, canvasW);
+        canvasH = max(10, canvasH);
+        createCanvas(canvasW, canvasH);
+        
+        let scaleRatio = canvasW / CONFIG.w;
+        CONFIG.moonRadius *= scaleRatio;
+        CONFIG.moonY *= scaleRatio;
+
+        try {
+            moonImg = loadImage('image_a369b6.png', (img) => {
+                img.loadPixels(); imgLoaded = true;
+                if(moonRef) moonRef.initParticles(); 
+            }, () => { imgLoaded = false; });
+        } catch (e) { imgLoaded = false; }
+
+        let gui = new dat.GUI({ width: 300 });
+        
+        let moonFolder = gui.addFolder('水月粒子渲染参数');
+        moonFolder.add(PARAMS, 'brightness', 0.5, 3.0).name('全局亮度');
+        moonFolder.add(PARAMS, 'feather', 0.0, 1.0).name('边缘羽化');
+        moonFolder.add(PARAMS, 'particleDensity', 0.3, 2.5).name('粒子密度').onChange(() => { if(moonRef) moonRef.initParticles(); });
+        moonFolder.add(PARAMS, 'denseArea', 0.0, 1.0).name('密集区范围').onChange(() => { if(moonRef) moonRef.initParticles(); });
+        moonFolder.add(PARAMS, 'centerDensity', 0.0, 1.0).name('边缘稀疏度').onChange(() => { if(moonRef) moonRef.initParticles(); });
+        moonFolder.add(PARAMS, 'particleSize', 0.5, 6.0).name('粒子大小');
+        moonFolder.add(PARAMS, 'particleSoftness', 0.0, 1.0).name('单粒子虚化度');
+        moonFolder.add(PARAMS, 'haloIntensity', 0.0, 3.0).name('光晕强度');
+        moonFolder.add(PARAMS, 'haloSpread', 1.0, 4.0).name('光晕范围');
+        moonFolder.add(PARAMS, 'sphereShading', 0.0, 1.0).name('立体阴影强度');
+
+        let waveFolder = gui.addFolder('动态水波与光点系统');
+        waveFolder.add(PARAMS, 'topWaveAmp', 0.0, 5.0).name('顶部微波幅度');
+        waveFolder.add(PARAMS, 'bottomWaveAmp', 2.0, 30.0).name('底部剧波幅度');
+        waveFolder.add(PARAMS, 'waveFreq', 0.005, 0.08).name('水波频率');
+        waveFolder.add(PARAMS, 'waveSpeed', 0.1, 25.0).name('水波流速'); 
+        waveFolder.add(PARAMS, 'waveLineBright', 0, 150).name('波峰线条亮度');
+        waveFolder.add(PARAMS, 'waveLineDark', 0, 50).name('波谷线条暗度');
+        waveFolder.add(PARAMS, 'crestDotFreq', 0.01, 0.1).name('光点平滑呼吸率');
+        waveFolder.add(PARAMS, 'crestDotBright', 50, 255).name('光点最大亮度');
+        waveFolder.add(PARAMS, 'crestDotHalo', 5, 30).name('光点光晕范围');
+
+        let branchFolder = gui.addFolder('前景竹枝与交互');
+        branchFolder.add(PARAMS, 'bambooColor', {
+            '深碧翠绿 (Emerald)': '#122b1c',
+            '幽夜墨绿 (Midnight)': '#0a1c12',
+            '苍苔暗绿 (Moss)': '#1a3b2b',
+            '沉夜苍松 (Pine)': '#0e2417'
+        }).name('夜视竹色').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'jointLength', 20, 100).name('竹节长度').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'branchThick', 2.0, 15.0).name('竹枝粗细').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'leafDensity', 0.1, 2.0).name('竹叶数量').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'leafMinSize', 5, 25).name('最小竹叶').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'leafMaxSize', 15, 60).name('最大竹叶').onChange(() => { if(branch) branch.initBranch(); });
+        branchFolder.add(PARAMS, 'branchAngle', -180, 180).name('朝向角度').onChange(() => { if(branch) branch.initBranch(); });
+        
+        // 新增：背景水底竹影控制组
+        let shadowFolder = gui.addFolder('背景水底竹影');
+        shadowFolder.add(PARAMS, 'shadowCount', 0, 20).step(1).name('竹影分布数量').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
+        shadowFolder.add(PARAMS, 'shadowMinSize', 20, 80).name('最小初始段长').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
+        shadowFolder.add(PARAMS, 'shadowMaxSize', 50, 200).name('最大初始段长').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
+        // shadowFolder.open(); 
+
+        let interactFolder = gui.addFolder('物理交互 (水波与碎月)');
+        interactFolder.add(PARAMS, 'rippleIntensity', 0, 40).name('单击波纹强度');
+        interactFolder.add(PARAMS, 'wakeIntensity', 0, 15).name('拖拽尾迹强度');
+        interactFolder.add(PARAMS, 'dragRadius', 20, 150).name('粒子拖拽吸附半径');
+        interactFolder.add(PARAMS, 'dragProbability', 0.01, 1.0).name('粒子被吸附概率');
+        interactFolder.add(PARAMS, 'dragCluster', 0, 100).name('吸附后分散范围');
+        interactFolder.add(PARAMS, 'dragForce', 0.01, 0.4).name('粒子拖拽跟随力度');
+        interactFolder.add(PARAMS, 'dropRate', 0.0, 0.15).name('拖拽时脱落速度'); 
+        interactFolder.add(PARAMS, 'gatherSpeed', 0.01, 0.15).name('松开后回聚速度');
+        
+        env = new Environment();
+        moonRef = new MoonReflection();
+        floatingParticles = new ParticleSystem();
+        branch = new BambooBranch(); 
+        bgShadows = new ShadowSystem(); // 初始化竹影系统
+        noCursor();
+    }
+
+    function draw() {
+        globalTime += CONFIG.timeScale;
+        updateRipples();
+        
+        env.drawBackground();
+        moonRef.draw();
+        floatingParticles.draw();
+        branch.draw();
+        env.drawFilmGrain();
+    }
+
+    function mousePressed() { if(branch && branch.worldTip) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, false)); }
+    function mouseDragged() { if(branch && branch.worldTip && frameCount % 3 === 0) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, true)); }
+
+    // ==========================================
+    // 物理涟漪与波纹系统
+    // ==========================================
+    class Ripple {
+        constructor(x, y, isDrag) {
+            this.x = x; this.y = y; this.age = 0; this.maxAge = isDrag ? 60 : 120;
+            this.amp = isDrag ? PARAMS.wakeIntensity : PARAMS.rippleIntensity;
+            this.speed = isDrag ? 1.5 : 3.0;
+        }
+    }
+
+    function updateRipples() {
+        for (let i = ripples.length - 1; i >= 0; i--) {
+            ripples[i].age++;
+            if (ripples[i].age > ripples[i].maxAge) ripples.splice(i, 1);
+        }
+    }
+
+    function getWaterDisplacement(x, y, time) {
+        let depth = constrain(y / height, 0, 1);
+        let amp = map(Math.pow(depth, 1.8), 0, 1, PARAMS.topWaveAmp, PARAMS.bottomWaveAmp);
+        let baseWave = sin(x * PARAMS.waveFreq + time * PARAMS.waveSpeed) + sin(x * (PARAMS.waveFreq * 1.6) - time * (PARAMS.waveSpeed * 1.2)) * 0.4;
+        let disp = baseWave * amp;
+        
+        for (let r of ripples) {
+            let d = dist(x, y, r.x, r.y);
+            let diff = d - (r.age * r.speed);
+            if (abs(diff) < 40) disp += cos(diff * 0.2) * exp(-(diff * diff) / 200) * map(r.age, 0, r.maxAge, 1, 0, true) * r.amp;
+        }
+        return disp;
+    }
+
+    // ==========================================
+    // 环境系统 (渐变底色、水波线绘制、胶片噪点)
+    // ==========================================
+    class Environment {
+        constructor() {
+            this.bgGradient = drawingContext.createLinearGradient(0, 0, 0, height);
+            this.bgGradient.addColorStop(0, CONFIG.colorTop);
+            this.bgGradient.addColorStop(1, CONFIG.colorBottom);
+            
+            let gw = max(10, width);
+            let gh = max(10, height);
+            this.grainGraphics = createGraphics(gw, gh);
+            this.grainGraphics.noStroke();
+            for (let i = 0; i < 12000; i++) {
+                this.grainGraphics.fill(255, 255, 255, random(3, 10));
+                this.grainGraphics.circle(random(gw), random(gh), random(0.5, 1.0));
+            }
+        }
+
+        drawBackground() {
+            drawingContext.fillStyle = this.bgGradient;
+            noStroke(); rect(0, 0, width, height);
+
+            // 【新增】：在绘制水波反光线之前，先绘制水底的竹影
+            // 这样竹影就会完美融入水中，且水波的光点会叠加在它们上方
+            if (bgShadows) bgShadows.draw();
+
+            let dots = []; 
+            noFill();
+            
+            for (let y = 0; y < height; y += 15) {
+                let globalFade = map(y, 0, height, 0.1, 1);
+                
+                beginShape();
+                for (let x = 0; x <= width + 10; x += 10) {
+                    let disp = getWaterDisplacement(x, y, globalTime * 3.0) * 0.5;
+                    let normDisp = constrain(disp / (PARAMS.bottomWaveAmp * 0.5 + 0.1), -1, 1);
+                    let bright = map(normDisp, -0.7, 0.7, PARAMS.waveLineBright, PARAMS.waveLineDark, true);
+                    
+                    stroke(255, 255, 255, bright * globalFade);
+                    strokeWeight(1.0);
+                    vertex(x, y + disp);
+                    
+                    if (noise(x * 0.1, y * 0.1) > 0.65) {
+                        let crestFactor = map(normDisp, -0.6, 0.2, 1, 0, true); 
+                        let timeFade = map(sin(globalTime * PARAMS.crestDotFreq * 10 + x * 0.05 + y * 0.05), -1, 1, 0, 1);
+                        let dotAlpha = crestFactor * timeFade * PARAMS.crestDotBright * globalFade;
+                        
+                        if (dotAlpha > 2) dots.push({x: x, y: y + disp, alpha: dotAlpha});
+                    }
+                }
+                endShape();
+            }
+
+            noStroke();
+            for (let d of dots) {
+                fill(255, 255, 255, d.alpha);
+                circle(d.x, d.y, random(1.8, 2.5));
+                fill(255, 255, 255, d.alpha * 0.25);
+                circle(d.x, d.y, PARAMS.crestDotHalo);
+            }
+        }
+
+        drawFilmGrain() {
+            blendMode(SCREEN); image(this.grainGraphics, 0, 0); blendMode(BLEND); 
+        }
+    }
+
+    // ==========================================
+    // 新增：背景水底竹影系统
+    // ==========================================
+    class ShadowSystem {
+        constructor() { 
+            this.initShadows(); 
+        }
+
+        initShadows() {
+            this.segments = []; 
+            this.leaves = [];
+            
+            for (let i = 0; i < PARAMS.shadowCount; i++) {
+                // 随机选择画面四个边缘之一作为竹影起点
+                let edge = floor(random(4));
+                let x, y, angle;
+                if (edge === 0) { 
+                    x = random(width); y = -20; angle = random(PI*0.3, PI*0.7); // 顶部向下伸
+                } else if (edge === 1) { 
+                    x = width + 20; y = random(height); angle = random(PI*0.7, PI*1.3); // 右侧向左伸
+                } else if (edge === 2) { 
+                    x = random(width); y = height + 20; angle = random(-PI*0.7, -PI*0.3); // 底部向上伸
+                } else { 
+                    x = -20; y = random(height); angle = random(-PI*0.3, PI*0.3); // 左侧向右伸
+                }
+
+                let len = random(PARAMS.shadowMinSize, PARAMS.shadowMaxSize);
+                let thick = map(len, 20, 200, 3, 15);
+                this.generateTree(x, y, angle, len, thick, 0);
+            }
+        }
+
+        generateTree(x, y, angle, len, thick, depth) {
+            // 控制深度，防止竹影过度遮挡中间区域
+            if (depth > 4) return;
+            
+            let endAngle = angle + random(-0.08, 0.08);
+            let endX = x + cos(endAngle) * len;
+            let endY = y + sin(endAngle) * len;
+
+            this.segments.push({ x1: x, y1: y, x2: endX, y2: endY, thick: thick });
+
+            let leafProb = map(depth, 0, 4, 0.2, 1.0);
+            if (random() < leafProb) {
+                let leafCount = floor(random(2, 6));
+                for (let i = 0; i < leafCount; i++) {
+                    this.leaves.push({
+                        x: endX, y: endY,
+                        angle: endAngle + random(-PI/2.2, PI/2.2),
+                        len: random(20, 50)
+                    });
+                }
+            }
+
+            if (depth < 4) {
+                this.generateTree(endX, endY, endAngle + random(-0.05, 0.05), len * random(0.8, 0.95), max(1, thick * random(0.7, 0.9)), depth + 1);
+                if (random() < 0.6) {
+                    let dir = random() > 0.5 ? 1 : -1;
+                    let forkAngle = endAngle + dir * random(0.2, 0.5);
+                    this.generateTree(endX, endY, forkAngle, len * random(0.4, 0.7), max(1, thick * random(0.4, 0.6)), depth + 1);
+                }
+            }
+        }
+
+        draw() {
+            strokeCap(PROJECT);
+            // 绘制竹枝阴影 (黑灰色，半透明，融入水色)
+            stroke(2, 4, 8, 140);
+            for (let s of this.segments) {
+                // 应用全局水波偏移，使阴影随水波动
+                let d1 = getWaterDisplacement(s.x1, s.y1, globalTime * 3.0) * 0.5;
+                let d2 = getWaterDisplacement(s.x2, s.y2, globalTime * 3.0) * 0.5;
+                strokeWeight(s.thick);
+                line(s.x1, s.y1 + d1, s.x2, s.y2 + d2);
+            }
+            
+            // 绘制竹叶阴影
+            noStroke();
+            fill(2, 4, 8, 160);
+            for (let l of this.leaves) {
+                let d = getWaterDisplacement(l.x, l.y, globalTime * 3.0) * 0.5;
+                push();
+                translate(l.x, l.y + d);
+                rotate(l.angle);
+                beginShape();
+                vertex(0, 0);
+                let lw = l.len * 0.18;
+                bezierVertex(lw, l.len/3, lw, l.len*2/3, 0, l.len);
+                bezierVertex(-lw, l.len*2/3, -lw, l.len/3, 0, 0);
+                endShape(CLOSE);
+                pop();
+            }
+        }
+    }
+
+    // ==========================================
+    // 水月粒子系统 (结合水波与鼠标拖拽物理引擎)
+    // ==========================================
+    class MoonReflection {
+        constructor() { this.particles = []; this.initParticles(); }
+
+        initParticles() {
+            this.particles = [];
+            let r = CONFIG.moonRadius;
+            let baseCount = (r * r * PI) * 0.2 * PARAMS.particleDensity; 
+            let falloffPower = map(PARAMS.centerDensity, 0, 1, 0.0, 5.0);
+            
+            for (let i = 0; i < baseCount; i++) {
+                let angle, radius, distRatio, px, py;
+                let valid = false;
+                while (!valid) {
+                    angle = random(TWO_PI);
+                    radius = r * sqrt(random()); 
+                    distRatio = radius / r;
+                    let keepProb = 1.0;
+                    if (distRatio > PARAMS.denseArea && PARAMS.denseArea < 1.0) {
+                        let normalizedDist = (distRatio - PARAMS.denseArea) / (1.0 - PARAMS.denseArea);
+                        keepProb = Math.pow(1.0 - normalizedDist, falloffPower);
+                    }
+                    if (random() < keepProb) valid = true;
+                }
+                
+                px = radius * cos(angle); py = radius * sin(angle) * 0.7; 
+                let worldX = width / 2 + px; let worldY = CONFIG.moonY + py;
+                let col;
+                
+                if (imgLoaded && moonImg && moonImg.pixels && moonImg.width > 1) {
+                    let sx = constrain(floor(map(worldX, width/2 - r, width/2 + r, 0, moonImg.width)), 0, moonImg.width - 1);
+                    let sy = constrain(floor(map(worldY, CONFIG.moonY - r, CONFIG.moonY + r, 0, moonImg.height)), 0, moonImg.height - 1);
+                    let idx = (sy * moonImg.width + sx) * 4;
+                    col = color(moonImg.pixels[idx], moonImg.pixels[idx+1], moonImg.pixels[idx+2]);
+                } else {
+                    let v = noise(worldX*0.05, worldY*0.05);
+                    col = v > 0.5 ? color('#E2E6F2') : (v > 0.3 ? color('#FDF8ED') : color('#F5F5F5'));
+                }
+
+                this.particles.push({ 
+                    baseX: px, baseY: py, color: col, distRatio: distRatio, noiseOffset: random(1000),
+                    ox: 0, oy: 0, vx: 0, vy: 0, 
+                    isDragged: false, dragOffsetX: 0, dragOffsetY: 0,
+                    mobility: random(), dragCooldown: 0 
+                });
+            }
+        }
+
+        draw() {
+            let r = CONFIG.moonRadius, cy = CONFIG.moonY, cx = width / 2, ctx = drawingContext;
+            noStroke();
+            
+            ctx.save(); ctx.translate(cx, cy);
+            if (PARAMS.haloIntensity > 0) {
+                ctx.save(); ctx.scale(1, 0.7); ctx.globalCompositeOperation = 'lighter'; 
+                let haloR = r * PARAMS.haloSpread;
+                let haloGrad = ctx.createRadialGradient(0, 0, r * PARAMS.denseArea, 0, 0, haloR);
+                haloGrad.addColorStop(0, `rgba(255, 255, 255, ${constrain(0.4 * PARAMS.haloIntensity, 0, 1)})`);
+                haloGrad.addColorStop(0.5, `rgba(240, 248, 255, ${constrain(0.12 * PARAMS.haloIntensity, 0, 1)})`); 
+                haloGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = haloGrad;
+                ctx.beginPath(); ctx.arc(0, 0, haloR, 0, TWO_PI); ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+
+            let bTip = branch ? branch.worldTip : null;
+            let isPressing = mouseIsPressed;
+
+            for (let p of this.particles) {
+                let targetX = cx + p.baseX; 
+                let targetY = cy + p.baseY;
+
+                if (p.dragCooldown > 0) p.dragCooldown--;
+
+                let currentScreenX = targetX + p.ox;
+                let currentScreenY = targetY + p.oy;
+
+                if (bTip && isPressing) {
+                    let d = dist(currentScreenX, currentScreenY, bTip.x, bTip.y);
+                    if (d < PARAMS.dragRadius && !p.isDragged && p.dragCooldown <= 0) {
+                        if (p.mobility < PARAMS.dragProbability) {
+                            p.isDragged = true;
+                            let angle = random(TWO_PI);
+                            let spread = random(0, PARAMS.dragCluster);
+                            p.dragOffsetX = cos(angle) * spread;
+                            p.dragOffsetY = sin(angle) * spread;
+                        }
+                    }
+                } else {
+                    p.isDragged = false;
+                }
+
+                if (p.isDragged) {
+                    if (random() < PARAMS.dropRate) {
+                        p.isDragged = false;
+                        p.dragCooldown = floor(random(40, 80)); 
+                    }
+                }
+
+                if (p.isDragged && bTip) {
+                    let goalX = bTip.x + p.dragOffsetX;
+                    let goalY = bTip.y + p.dragOffsetY;
+                    p.vx += (goalX - currentScreenX) * PARAMS.dragForce;
+                    p.vy += (goalY - currentScreenY) * PARAMS.dragForce;
+                } else {
+                    p.vx += (0 - p.ox) * PARAMS.gatherSpeed;
+                    p.vy += (0 - p.oy) * PARAMS.gatherSpeed;
+                }
+
+                p.vx *= 0.82; 
+                p.vy *= 0.82;
+                p.ox += p.vx;
+                p.oy += p.vy;
+
+                let nx = p.baseX / r; let ny = p.baseY / (r * 0.7); 
+                let nz = sqrt(max(0, 1 - nx * nx - ny * ny));
+                let dotProduct = nx * -0.65 + ny * -0.35 + nz * 0.67;
+                let shadeMult = map(dotProduct, -0.6, 0.9, lerp(1.0, 0.1, PARAMS.sphereShading), lerp(1.0, 1.3, PARAMS.sphereShading), true);
+
+                let waveOffset = getWaterDisplacement(targetX + p.ox, targetY + p.oy, globalTime * 2.0);
+                
+                let finalX = targetX + p.ox + waveOffset * 1.5; 
+                let finalY = targetY + p.oy + waveOffset * 0.3;
+
+                let shimmer = noise(p.noiseOffset + globalTime);
+                let edgeAlpha = (1 - Math.pow(p.distRatio, map(PARAMS.feather, 0, 1, 4.0, 0.6))) * 255;
+                
+                let isDisplaced = abs(p.ox) > 5 || abs(p.oy) > 5;
+                
+                if ((edgeAlpha > 5 && shimmer > 0.3) || isDisplaced) {
+                    let renderAlpha = constrain(edgeAlpha * PARAMS.brightness * shimmer * shadeMult, 0, 255);
+                    
+                    if (isDisplaced) {
+                        ctx.globalCompositeOperation = 'lighter';
+                        renderAlpha = constrain(renderAlpha * 1.5 + 50, 80, 220);
+                        fill(255, 250, 240, renderAlpha);
+                    } else {
+                        ctx.globalCompositeOperation = shimmer > 0.75 ? 'lighter' : 'source-over';
+                        p.color.setAlpha(renderAlpha); 
+                        fill(p.color);
+                    }
+                    
+                    ctx.save(); ctx.translate(finalX, finalY); ctx.rotate(waveOffset * 0.05); 
+                    let sz = PARAMS.particleSize;
+                    let pW = sz * random(1.2, 1.8); let pH = sz * random(0.6, 1.0);
+                    let soft = PARAMS.particleSoftness;
+
+                    if (soft > 0.05) {
+                        if(isDisplaced) {
+                            fill(255, 250, 240, renderAlpha * (1.0 - soft * 0.6));
+                            ellipse(0, 0, pW * (1.0 + soft * 1.5), pH * (1.0 + soft * 1.5));
+                            fill(255, 255, 255, constrain(renderAlpha * 1.2, 0, 255));
+                            ellipse(0, 0, pW * 0.4, pH * 0.4);
+                        } else {
+                            p.color.setAlpha(renderAlpha * (1.0 - soft * 0.6)); fill(p.color);
+                            ellipse(0, 0, pW * (1.0 + soft * 1.5), pH * (1.0 + soft * 1.5));
+                            p.color.setAlpha(constrain(renderAlpha * 1.2, 0, 255)); fill(p.color);
+                            ellipse(0, 0, pW * 0.4, pH * 0.4);
+                        }
+                    } else {
+                        ellipse(0, 0, pW, pH);
+                    }
+                    ctx.restore(); ctx.globalCompositeOperation = 'source-over';
+                }
+            }
+        }
+    }
+
+    // ==========================================
+    // 独立漂浮光斑 (氛围层)
+    // ==========================================
+    class ParticleSystem {
+        constructor() {
+            this.particles = Array.from({length: 40}, () => ({
+                x: random(width), y: random(height * 0.3, height), 
+                r: random(4, 18), speedX: random(-0.1, 0.1), life: random(TWO_PI)
+            }));
+        }
+        draw() {
+            drawingContext.globalCompositeOperation = 'lighter'; 
+            noStroke();
+            for (let p of this.particles) {
+                let waveOffset = getWaterDisplacement(p.x, p.y, globalTime * 1.5);
+                p.x += p.speedX + waveOffset * 0.01; p.life += 0.01;
+                let alpha = map(sin(p.life), -1, 1, 0, 150);
+                if (p.x < -30) p.x = width + 30; else if (p.x > width + 30) p.x = -30;
+                let boost = map(dist(p.x, p.y, width/2, CONFIG.moonY), 0, CONFIG.moonRadius*2, 1.2, 0.2, true);
+
+                if (alpha > 5) {
+                    fill(180, 220, 255, alpha * 0.1 * boost); ellipse(p.x, p.y, p.r * 2.5, p.r * 0.8); 
+                    fill(255, 255, 255, alpha * 0.8 * boost); ellipse(p.x, p.y, p.r * 0.4, p.r * 0.15); 
+                }
+            }
+            drawingContext.globalCompositeOperation = 'source-over';
+        }
+    }
+
+    // ==========================================
+    // 全新暗夜竹影系统 (物理递归竹枝)
+    // ==========================================
+    class BambooBranch {
+        constructor() {
+            this.x = width / 2; this.y = height / 2;
+            this.angle = 0; this.targetAngle = 0; this.initialized = false;
+            this.worldTip = {x: 0, y: 0}; 
+            this.initBranch();
+        }
+
+        initBranch() {
+            this.segments = []; this.leaves = [];
+            this.tipPoint = createVector(0, 0);
+            
+            // 将参数设置的角度转为弧度
+            let angleRad = radians(PARAMS.branchAngle);
+            
+            // 开始递归生成竹子，深度限定为5节
+            this.generateTree(0, 0, angleRad, PARAMS.jointLength, PARAMS.branchThick, 0, true);
+            
+            let offX = -this.tipPoint.x, offY = -this.tipPoint.y;
+            for (let s of this.segments) { s.p1.x += offX; s.p1.y += offY; s.p2.x += offX; s.p2.y += offY; }
+            for (let l of this.leaves) { l.pos.x += offX; l.pos.y += offY; }
+        }
+
+        generateTree(x, y, angle, len, thick, depth, isMain) {
+            if (depth > 5) return;
+            // 竹子比较挺拔，角度变化极小
+            let endAngle = angle + random(-0.06, 0.06); 
+            let endX = x + cos(endAngle) * len, endY = y + sin(endAngle) * len;
+            
+            this.segments.push({ p1: createVector(x, y), p2: createVector(endX, endY), thick: thick, angle: endAngle });
+            if (isMain) this.tipPoint = createVector(endX, endY);
+
+            // 竹叶更倾向于在末端竹节处长出 (呈现"个"字簇状)
+            let leafProb = map(depth, 0, 5, 0.1, 1.0) * PARAMS.leafDensity;
+            if (random() < leafProb) {
+                let leafCount = floor(random(1, 4 * PARAMS.leafDensity));
+                for (let i = 0; i < leafCount; i++) {
+                    // 为叶片赋予略有差异的深绿色
+                    let baseCol = color(PARAMS.bambooColor);
+                    baseCol.setRed(red(baseCol) + random(-10, 15));
+                    baseCol.setGreen(green(baseCol) + random(-10, 20));
+                    baseCol.setBlue(blue(baseCol) + random(-10, 15));
+                    
+                    this.leaves.push({ 
+                        pos: createVector(endX, endY), 
+                        // 竹叶方向通常与竹节方向有一个斜角展开
+                        angle: endAngle + random(-PI/2.5, PI/2.5), 
+                        len: random(PARAMS.leafMinSize, PARAMS.leafMaxSize), 
+                        color: baseCol 
+                    });
+                }
+            }
+
+            if (depth < 5) {
+                // 主干竹节延续
+                this.generateTree(endX, endY, endAngle + random(-0.05, 0.05), len * random(0.85, 0.95), max(1, thick * random(0.8, 0.9)), depth + 1, isMain);
+                
+                // 竹子在节点处容易分叉生出细小侧枝
+                if (random() < 0.6) {
+                    let dir = random() > 0.5 ? 1 : -1;
+                    let forkAngle = endAngle + dir * random(0.2, 0.5); 
+                    this.generateTree(endX, endY, forkAngle, len * random(0.4, 0.7), max(1, thick * random(0.3, 0.5)), depth + 1, false);
+                }
+            }
+        }
+
+        draw() {
+            let targetX = mouseX || width / 2, targetY = mouseY || height / 2;
+            if (!this.initialized && mouseX !== 0) { this.x = targetX; this.y = targetY; this.initialized = true; }
+            this.x = lerp(this.x, targetX, 0.08); this.y = lerp(this.y, targetY, 0.08);
+            this.targetAngle = constrain((targetX - this.x) * 0.003, -0.15, 0.15) + sin(globalTime * 1.5) * 0.015;
+            this.angle = lerp(this.angle, this.targetAngle, 0.1);
+            this.worldTip.x = this.x; this.worldTip.y = this.y;
+
+            drawingContext.save(); translate(this.x, this.y); rotate(this.angle);
+            // 给竹子增加微弱环境阴影，融入夜色
+            drawingContext.shadowColor = 'rgba(0, 0, 0, 0.6)'; drawingContext.shadowBlur = 12;
+            
+            // 解析颜色，分别用于竹身主体、柱状高光和竹节横纹
+            let bColor = color(PARAMS.bambooColor);
+            let hlColor = color(red(bColor)*1.3, green(bColor)*1.3, blue(bColor)*1.3);
+            let nodeColor = color(red(bColor)*0.4, green(bColor)*0.4, blue(bColor)*0.4);
+
+            for (let s of this.segments) {
+                // 画竹筒主体
+                stroke(bColor); strokeWeight(s.thick); strokeCap(PROJECT);
+                line(s.p1.x, s.p1.y, s.p2.x, s.p2.y);
+                
+                // 画竹筒圆柱反光（让竹子显得立体硬朗）
+                if (s.thick > 2) { 
+                    stroke(hlColor); strokeWeight(s.thick * 0.25); 
+                    // 顺着竹身略微偏移一点
+                    let hx = cos(s.angle + PI/2) * s.thick * 0.2;
+                    let hy = sin(s.angle + PI/2) * s.thick * 0.2;
+                    line(s.p1.x + hx, s.p1.y + hy, s.p2.x + hx, s.p2.y + hy); 
+                }
+
+                // 画明显的竹节(凸起的深色横线)
+                stroke(nodeColor); strokeWeight(s.thick * 1.5); strokeCap(ROUND);
+                let nx = cos(s.angle + PI/2) * s.thick * 0.55;
+                let ny = sin(s.angle + PI/2) * s.thick * 0.55;
+                line(s.p2.x - nx, s.p2.y - ny, s.p2.x + nx, s.p2.y + ny);
+            }
+            drawingContext.shadowColor = 'transparent'; 
+
+            // 绘制竹叶（锋利的剑形贝塞尔曲线）
+            noStroke();
+            for (let l of this.leaves) { 
+                push(); translate(l.pos.x, l.pos.y); rotate(l.angle); 
+                fill(l.color); 
+                beginShape();
+                vertex(0, 0);
+                let lw = l.len * 0.18; // 叶片宽度大概是长度的18%
+                // 绘制狭长的剑形竹叶
+                bezierVertex(lw, l.len/3, lw, l.len*2/3, 0, l.len);
+                bezierVertex(-lw, l.len*2/3, -lw, l.len/3, 0, 0);
+                endShape(CLOSE);
+                pop(); 
+            }
+            drawingContext.restore();
+        }
+    }
+</script>
+</body>
+</html>

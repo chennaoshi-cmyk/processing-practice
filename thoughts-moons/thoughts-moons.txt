@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generative Winter Tree - Thoughts & Moons</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #02040a; 
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      background: #101216;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      box-shadow: 5px 0 20px rgba(0,0,0,0.5);
+    }
+
+    #ui-header {
+      padding: 20px;
+      background: rgba(255,255,255,0.02);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    #ui-header h1 {
+      font-size: 16px;
+      margin: 0;
+      color: #fff;
+      font-weight: 500;
+      letter-spacing: 1px;
+    }
+
+    .panel-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex-grow: 1;
+    }
+    
+    .panel-body::-webkit-scrollbar { width: 6px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+    .section-title {
+      font-size: 13px;
+      color: #fff;
+      margin: 15px 0 10px 0;
+      padding-bottom: 5px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .control-group { margin-bottom: 18px; }
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+      color: #aaa;
+    }
+    input[type=range], select {
+      width: 100%;
+      background: #23272d;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      padding: 5px;
+      outline: none;
+    }
+    input[type=range] { accent-color: #8c93a1; cursor: pointer; padding: 0; }
+    
+    .btn-generate {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      background: #323842;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+    }
+    .btn-generate:hover { background: #454c59; }
+
+    .file-upload-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+      margin-top: 5px;
+    }
+    .file-upload-wrapper input[type=file] {
+      font-size: 100px;
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .btn-upload {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      background: #1e2126;
+      color: #8c93a1;
+      border: 1px dashed rgba(255,255,255,0.2);
+      border-radius: 4px;
+      text-align: center;
+      font-size: 12px;
+      box-sizing: border-box;
+      transition: all 0.2s;
+    }
+    .file-upload-wrapper:hover .btn-upload { background: #2a2e35; color: #fff; }
+
+    #main-content {
+      flex-grow: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+      box-shadow: 0 10px 60px rgba(0, 0, 0, 0.9);
+      background-color: #050914; 
+      cursor: none; 
+      transition: background-color 0.5s ease;
+    }
+
+    canvas { display: block; cursor: none; }
+
+    #status-text {
+      position: absolute;
+      bottom: -30px;
+      width: 100%;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+      letter-spacing: 2px;
+      pointer-events: none;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.min.js"></script>
+</head>
+<body>
+
+  <div id="sidebar">
+    <div id="ui-header">
+      <h1>冬树与星环蕾丝系统</h1>
+    </div>
+    
+    <div class="panel-body">
+      <div class="section-title">生成参数 (Generation)</div>
+      <div class="control-group">
+        <label><span>笔触风格 (Brush Style)</span></label>
+        <select id="param-brush">
+          <option value="charcoal">炭笔 (Charcoal)</option>
+          <option value="pencil">铅笔稿 (Pencil)</option>
+          <option value="airbrush">气笔/喷枪 (Airbrush)</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label><span>笔触整体粗细 (Brush Thickness)</span> <span id="val-thickness">1.0</span></label>
+        <input type="range" id="param-thickness" min="0.2" max="3.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>弯曲强度 (Crookedness)</span> <span id="val-bend">0.25</span></label>
+        <input type="range" id="param-bend" min="0.0" max="0.6" step="0.05" value="0.25">
+      </div>
+      <div class="control-group">
+        <label><span>树冠幅度 (Canopy Spread)</span> <span id="val-spread">1.2</span></label>
+        <input type="range" id="param-spread" min="0.2" max="2.5" step="0.1" value="1.2">
+      </div>
+      <button class="btn-generate" onclick="initTree()">重新生长树木</button>
+
+      <div class="section-title" style="margin-top:25px;">无遮罩：思念月牙 (No Mask Effect)</div>
+      <div class="control-group">
+        <label><span>「想」字颜色 (Color Xiang)</span></label>
+        <input type="color" id="param-colorXiang" value="#ffffff" style="height: 28px; padding: 0; cursor: pointer;">
+      </div>
+      <div class="control-group">
+        <label><span>「念」字颜色 (Color Nian)</span></label>
+        <input type="color" id="param-colorNian" value="#ffffff" style="height: 28px; padding: 0; cursor: pointer;">
+      </div>
+      <div class="control-group">
+        <label><span>月牙颜色 (Color Moon)</span></label>
+        <input type="color" id="param-colorMoon" value="#ffffff" style="height: 28px; padding: 0; cursor: pointer;">
+      </div>
+      <div class="control-group">
+        <label><span>思念掉落率 (Word Rate)</span> <span id="val-wordRate">10</span></label>
+        <input type="range" id="param-wordRate" min="1" max="30" step="1" value="10">
+      </div>
+      <div class="control-group">
+        <label><span>思念大小 (Word Size)</span> <span id="val-wordSize">15</span></label>
+        <input type="range" id="param-wordSize" min="5" max="40" step="1" value="15">
+      </div>
+      <div class="control-group">
+        <label><span>月牙大小 (Moon Size)</span> <span id="val-moonSize">15</span></label>
+        <input type="range" id="param-moonSize" min="5" max="40" step="1" value="15">
+      </div>
+      <div class="control-group">
+        <label><span>月牙数量 (Moon Amount)</span> <span id="val-moonAmount">30</span></label>
+        <input type="range" id="param-moonAmount" min="5" max="100" step="1" value="30">
+      </div>
+
+      <div class="section-title" style="margin-top:25px;">有遮罩：树干烟雾消散 (Morph Effect)</div>
+      <div class="control-group">
+        <label><span>粉碎速度 (Crumble Speed)</span> <span id="val-pCrumble">1.0</span></label>
+        <input type="range" id="param-pCrumble" min="0.1" max="3.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>粒子大小 (Particle Size)</span> <span id="val-pSize">2.0</span></label>
+        <input type="range" id="param-pSize" min="0.5" max="5.0" step="0.1" value="2.0">
+      </div>
+      <div class="control-group">
+        <label><span>扩散强度 (Spread Force)</span> <span id="val-pSpread">1.0</span></label>
+        <input type="range" id="param-pSpread" min="0.1" max="3.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>消散时间 (Fade Time)</span> <span id="val-pFade">3.0</span></label>
+        <input type="range" id="param-pFade" min="1.0" max="10.0" step="0.5" value="3.0">
+      </div>
+
+      <div class="section-title" style="margin-top:25px;">化形位置与控制 (Position & Control)</div>
+      <div class="control-group">
+        <label><span>化形水平微调 (X Offset)</span> <span id="val-maskX">120</span></label>
+        <input type="range" id="param-maskX" min="-300" max="300" step="5" value="120">
+      </div>
+      <div class="control-group">
+        <label><span>化形高度微调 (Y Offset)</span> <span id="val-maskY">0</span></label>
+        <input type="range" id="param-maskY" min="-300" max="300" step="5" value="0">
+      </div>
+      <div class="control-group">
+        <label><span>遮罩缩放 (Mask Scale)</span> <span id="val-maskScale">1.0</span></label>
+        <input type="range" id="param-maskScale" min="0.2" max="5.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>灵魂密集度 (Mass Density)</span> <span id="val-manifestation">2.5</span></label>
+        <input type="range" id="param-manifestation" min="0.5" max="6.0" step="0.1" value="2.5">
+      </div>
+      <div class="control-group">
+        <label><span>笔触散乱度 (Stroke Scatter)</span> <span id="val-scatter">15</span></label>
+        <input type="range" id="param-scatter" min="0" max="40" step="1" value="15">
+      </div>
+      <div class="control-group">
+        <label><span>上传自定义黑白遮罩图</span></label>
+        <div class="file-upload-wrapper">
+          <button class="btn-upload" id="upload-label">上传遮罩 (Upload Mask)</button>
+          <input type="file" id="mask-upload" accept="image/*">
+        </div>
+      </div>
+      
+      <div class="section-title" style="margin-top:25px;">背景物理 (Lace Wind)</div>
+      <div class="control-group">
+        <label><span>星环半径 (Orbit Spread)</span> <span id="val-orbitSpread">1.0</span></label>
+        <input type="range" id="param-orbitSpread" min="0.2" max="3.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>上下弥散 (Vertical Spread)</span> <span id="val-verticalSpread">1.0</span></label>
+        <input type="range" id="param-verticalSpread" min="0.0" max="3.0" step="0.1" value="1.0">
+      </div>
+      <div class="control-group">
+        <label><span>外围风力 (Outer Vortex)</span> <span id="val-wind">0.15</span></label>
+        <input type="range" id="param-wind" min="0.0" max="0.3" step="0.01" value="0.15">
+      </div>
+    </div>
+  </div>
+
+  <div id="main-content">
+    <div id="canvas-wrapper">
+      <div id="status-text">正在生长中...</div>
+    </div>
+  </div>
+
+  <script>
+    const sysConfig = {
+      bgColor: '#050914',
+      treeColor: [210, 215, 220],
+      grainIntensity: 8,
+      trunkWeightBase: 22.4,  
+      maxDepth: 7,          
+      lengthShrink: 0.75,
+      weightShrink: 0.5, 
+      upwardBias: 0.08,     
+      stepSize: 2.4           
+    };
+
+    const basePhysics = {
+      twigThreshold: 2.8,    
+      damping: 0.85          
+    };
+
+    function easeOutQuad(t) { return t * (2 - t); }
+
+    const getUIParams = () => {
+      const p = { 
+        brush: document.getElementById('param-brush').value,
+        pattern: 'flesh',
+        colorXiang: document.getElementById('param-colorXiang').value,
+        colorNian: document.getElementById('param-colorNian').value,
+        colorMoon: document.getElementById('param-colorMoon').value
+      };
+      ['bend', 'spread', 'wind', 'thickness', 'manifestation', 'pSize', 'pSpread', 'pFade', 'pCrumble', 'orbitSpread', 'verticalSpread', 'maskX', 'maskY', 'maskScale', 'scatter', 'wordRate', 'wordSize', 'moonSize', 'moonAmount'].forEach(id => {
+        p[id] = parseFloat(document.getElementById(`param-${id}`).value);
+      });
+      p.stretch = 1.0; p.stiffness = 0.35;
+      return p;
+    };
+
+    let treeRoot;
+    let bgGraphics;         
+    let globalTime = 0;     
+    let treeFinished = false; 
+    let windMultiplier = 0; 
+
+    let isSkirtMode = false;
+    let skirtLace = null;         
+    let trunkParticles = null;    
+    let morphStartTime = 0; 
+
+    let maskImg = null;
+    let morphFleshSystem = null; 
+    
+    let wordDropSystem = null;
+    let moonGardenSystem = null;
+
+    function bindUI() {
+      const inputs = ['bend', 'spread', 'wind', 'thickness', 'manifestation', 'pSize', 'pSpread', 'pFade', 'pCrumble', 'orbitSpread', 'verticalSpread', 'maskX', 'maskY', 'maskScale', 'scatter', 'wordRate', 'wordSize', 'moonSize', 'moonAmount'];
+      inputs.forEach(id => {
+        const el = document.getElementById(`param-${id}`);
+        const valEl = document.getElementById(`val-${id}`);
+        el.addEventListener('input', (e) => valEl.innerText = e.target.value);
+      });
+
+      document.getElementById('mask-upload').addEventListener('change', function(e) {
+         let file = e.target.files[0];
+         if (file) {
+            let reader = new FileReader();
+            reader.onload = function(event) {
+               loadImage(event.target.result, img => {
+                  maskImg = img;
+                  document.getElementById('upload-label').innerText = "已加载：" + file.name;
+               });
+            };
+            reader.readAsDataURL(file);
+         }
+      });
+    }
+
+    function calculateCanvasSize() {
+      const wrapper = document.getElementById('main-content');
+      const maxW = wrapper.clientWidth - 80; 
+      const maxH = wrapper.clientHeight - 80;
+      let w = maxW;
+      let h = w * 4 / 3;
+      if (h > maxH) { h = maxH; w = h * 3 / 4; }
+      return { w, h };
+    }
+
+    function setup() {
+      bindUI();
+      let size = calculateCanvasSize();
+      let canvas = createCanvas(size.w, size.h);
+      canvas.parent('canvas-wrapper');
+      
+      generateBackgroundBuffer();
+      initTree();
+    }
+
+    function windowResized() {
+      let size = calculateCanvasSize();
+      resizeCanvas(size.w, size.h);
+      generateBackgroundBuffer();
+      initTree();
+    }
+
+    function generateBackgroundBuffer() {
+      bgGraphics = createGraphics(width, height);
+      bgGraphics.background(sysConfig.bgColor);
+      bgGraphics.loadPixels();
+      let d = bgGraphics.pixelDensity();
+      let totalPixels = 4 * (width * d) * (height * d);
+      for (let i = 0; i < totalPixels; i += 4 * floor(random(1, 4))) {
+         let noiseVal = random(-sysConfig.grainIntensity, sysConfig.grainIntensity);
+         bgGraphics.pixels[i] += noiseVal;
+         bgGraphics.pixels[i + 1] += noiseVal;
+         bgGraphics.pixels[i + 2] += noiseVal;
+      }
+      bgGraphics.updatePixels();
+    }
+
+    function initTree() {
+      globalTime = 0;
+      treeFinished = false;
+      windMultiplier = 0;
+      isSkirtMode = false;
+      skirtLace = null;
+      trunkParticles = null;
+      morphFleshSystem = null;
+      wordDropSystem = null;
+      moonGardenSystem = null;
+      morphStartTime = 0;
+      
+      document.getElementById('status-text').innerText = "沿着切线自然生长中...";
+
+      let trunkLen = min(height * 0.176, 128) * random(0.9, 1.1);
+      let trunkEndThick = sysConfig.trunkWeightBase * sysConfig.weightShrink;
+      treeRoot = new Branch(null, trunkLen, sysConfig.trunkWeightBase, trunkEndThick, 0, 0, 0);
+    }
+
+    class Transform2D {
+      constructor(x, y, angle) {
+        this.x = x; this.y = y; this.angle = angle;
+      }
+      transform(lx, ly) {
+        let cosA = cos(this.angle);
+        let sinA = sin(this.angle);
+        return {
+          x: this.x + lx * cosA - ly * sinA,
+          y: this.y + lx * sinA + ly * cosA
+        };
+      }
+      combine(lx, ly, angle) {
+        let p = this.transform(lx, ly);
+        return new Transform2D(p.x, p.y, this.angle + angle);
+      }
+    }
+
+    function draw() {
+      image(bgGraphics, 0, 0);
+      let params = getUIParams();
+
+      if (!treeFinished) {
+        let isGrowing = treeRoot.grow(params);
+        if (!isGrowing) {
+          treeFinished = true;
+          document.getElementById('status-text').innerText = "生长完成，点击画框内，开启风带细枝。";
+        }
+      } else if (!isSkirtMode) {
+        windMultiplier = lerp(windMultiplier, 1.0, 0.02);
+      }
+
+      if (!isSkirtMode) {
+        push();
+        translate(width / 2, height * 0.85); 
+        let rootTransform = new Transform2D(width / 2, height * 0.85, 0);
+        treeRoot.render(globalTime, windMultiplier, params, rootTransform, 1.0);
+        pop();
+        drawCustomCursor();
+      } else {
+        if (skirtLace) {
+            skirtLace.updatePhysics(globalTime, params, basePhysics);
+            skirtLace.renderWorld(params, 255); 
+        }
+
+        if (maskImg && maskImg.width > 0) {
+            if (globalTime - morphStartTime > 1.0) {
+                if (trunkParticles) {
+                    trunkParticles.update(params);
+                    trunkParticles.render(params);
+                }
+                if (morphFleshSystem) {
+                    morphFleshSystem.update(globalTime, params);
+                    morphFleshSystem.renderWorld(globalTime, params);
+                }
+            } else {
+                treeRoot.renderWorld(params, 255);
+            }
+        } else {
+            treeRoot.renderWorld(params, 255);
+            
+            if (wordDropSystem && moonGardenSystem) {
+                moonGardenSystem.update(params);
+                moonGardenSystem.render(params); 
+                
+                wordDropSystem.update(params, moonGardenSystem);
+                wordDropSystem.render(params);
+            }
+        }
+      }
+
+      globalTime += 0.015;
+    }
+
+    function drawCustomCursor() {
+      if (mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
+        push();
+        noStroke();
+        fill(255, 255, 255, 180);
+        circle(mouseX, mouseY, 3);
+        fill(255, 255, 255, 40);
+        circle(mouseX, mouseY, 14);
+        pop();
+      }
+    }
+
+    /* =========================================================
+       【终极重构】：融合星环物理的文字掉落系统
+    ========================================================= */
+    class WordDropSystem {
+        constructor(tree) {
+            this.words = [];
+            this.treeNodes = [];
+            this.cx = width / 2;
+            this.cy = height * 0.85;
+            
+            // 收集所有树干节点，作为文字掉落的真实发射源
+            let collectNodes = (b) => {
+                this.treeNodes.push(...b.nodes);
+                for (let child of b.children) collectNodes(child);
+            };
+            collectNodes(tree);
+        }
+        
+        update(params, moonSystem) {
+            let spawnChance = params.wordRate * 1.5; 
+            if (random(100) < spawnChance && this.treeNodes.length > 0) {
+                let sourceNode = random(this.treeNodes);
+                
+                this.words.push({
+                    char: random() > 0.5 ? '想' : '念',
+                    x: sourceNode.worldX,
+                    y: sourceNode.worldY,
+                    targetY: this.cy + random(-20, 50), // 落地判定高度
+                    fallVy: random(1.5, 3.5),
+                    phase: random(TWO_PI),
+                    rot: random(-PI/8, PI/8), 
+                    rotV: random(-0.02, 0.02), 
+                    alpha: 0,
+                    state: 'falling', // 状态机: falling, landed, orbiting
+                    
+                    // 为 orbiting(盘旋) 状态预留的物理变量
+                    vx: 0, 
+                    vy: 0,
+                    // 【修改】：扩大旋转半径和向上盘旋的高度，让其混杂在细枝树冠中
+                    origOrbitRadius: random(100, 300),
+                    orbitYOffset: random(-350, 20)
+                });
+            }
+
+            for (let i = this.words.length - 1; i >= 0; i--) {
+                let w = this.words[i];
+                
+                if (w.state === 'falling') {
+                    w.y += w.fallVy;
+                    w.x += sin(globalTime * 2 + w.phase) * 0.8;
+                    w.rot += w.rotV;
+                    
+                    if (w.alpha < 200) w.alpha += 8;
+
+                    // 落地判定
+                    if (w.y >= w.targetY) {
+                        w.y = w.targetY;
+                        
+                        // 落地瞬间必定生出月牙
+                        moonSystem.spawnMoon(w.x, w.y, params);
+                        
+                        // 命运分歧：70%被旋风卷起随星环盘旋，30%留在地上堆积
+                        if (random() < 0.70) {
+                            w.state = 'orbiting';
+                            // 【修改】：赋予一个更强的受惊弹起初速度，让它飞得更高
+                            w.vx = random(-3, 3);
+                            w.vy = random(-12, -6);
+                        } else {
+                            w.state = 'landed';
+                        }
+                    }
+                } 
+                else if (w.state === 'landed') {
+                    // 已落地的文字渐渐变得更实，留在原地堆积
+                    if (w.alpha < 255) w.alpha += 2;
+                } 
+                else if (w.state === 'orbiting') {
+                    // 【核心】：随风盘旋逻辑，对接星环物理引擎
+                    let cyOffset = this.cy + w.orbitYOffset * params.verticalSpread;
+                    let dx = w.x - this.cx;
+                    let dy = w.y - cyOffset;
+                    let trueY = dy / 0.3;
+                    let distFromCenter = sqrt(dx * dx + trueY * trueY) || 1;
+                    
+                    // 计算切向力 (旋风)
+                    let tx = -trueY / distFromCenter; 
+                    let ty = dx / distFromCenter; ty *= 0.3;
+                    // 计算径向力 (向心/离心)
+                    let rx = -dx / distFromCenter; 
+                    let ry = -trueY / distFromCenter; ry *= 0.3;
+                    
+                    let orbitForce = params.wind * 4.0 * (1 + noise(w.x * 0.01, globalTime));
+                    w.vx += tx * orbitForce;
+                    w.vy += ty * orbitForce;
+                    
+                    let targetRad = w.origOrbitRadius * params.orbitSpread;
+                    let pStrength = (distFromCenter - targetRad) * 0.03 * (params.wind + 0.1);
+                    w.vx += rx * pStrength;
+                    w.vy += ry * pStrength;
+                    
+                    // 升力补偿，防止被吹走后掉下来
+                    w.vy -= params.wind * 0.6;
+                    
+                    // 阻尼摩擦
+                    w.vx *= 0.85; 
+                    w.vy *= 0.85;
+                    
+                    w.x += w.vx; 
+                    w.y += w.vy;
+                    
+                    // 飞舞时文字翻滚速度加快
+                    w.rot += w.rotV * 4;
+                    // 被吹起的文字呈半透明虚影状态
+                    w.alpha = lerp(w.alpha, 140, 0.05);
+                }
+            }
+            
+            // 软上限控制，防止无限堆积或满天都是字导致卡顿
+            if (this.words.length > params.moonAmount * 6) {
+                this.words.shift(); // 移除最早掉落的文字，形成自然代谢
+            }
+        }
+        
+        render(params) {
+            push();
+            textAlign(CENTER, CENTER);
+            textFont("'Microsoft YaHei', 'SimSun', serif"); 
+            noStroke();
+            
+            // 应用独立的思念文字大小
+            textSize(params.wordSize);
+            
+            // 解析并应用自定义颜色
+            let colXiang = color(params.colorXiang);
+            let colNian = color(params.colorNian);
+            
+            for (let w of this.words) {
+                let currentCol = (w.char === '想') ? colXiang : colNian;
+                currentCol.setAlpha(w.alpha);
+                fill(currentCol);
+                push();
+                translate(w.x, w.y);
+                rotate(w.rot); // 应用倾斜或翻滚角度
+                text(w.char, 0, 0);
+                pop();
+            }
+            pop();
+        }
+    }
+
+    /* =========================================================
+       【新增】：月牙生长花园系统
+    ========================================================= */
+    class MoonGardenSystem {
+        constructor() {
+            this.moons = [];
+            this.cx = width / 2;
+            this.cy = height * 0.85;
+        }
+        spawnMoon(x, y, params) {
+            // 【修改】：70%的概率被风卷起
+            let isOrbiting = random() < 0.70; 
+            this.moons.push({
+                x: x,
+                y: y,
+                targetSize: params.moonSize * random(0.7, 1.3),
+                currentSize: 0,
+                angle: random(-PI/6, PI/6) + (random() > 0.5 ? 0 : PI), 
+                angleV: random(-0.05, 0.05), // 飞舞时的旋转速度
+                alpha: 255,
+                state: isOrbiting ? 'orbiting' : 'landed',
+                
+                // 随风盘旋的预设物理属性
+                // 【修改】：赋予更强的向上弹起初速度，并扩大盘旋的高度区间使其混入树冠
+                vx: isOrbiting ? random(-3, 3) : 0,
+                vy: isOrbiting ? random(-12, -6) : 0,
+                origOrbitRadius: random(100, 300),
+                orbitYOffset: random(-350, 20)
+            });
+
+            // 软上限控制
+            if (this.moons.length > params.moonAmount * 6) {
+                this.moons.shift();
+            }
+        }
+        update(params) {
+            for (let m of this.moons) {
+                m.currentSize = lerp(m.currentSize, m.targetSize, 0.04);
+                
+                if (m.state === 'orbiting') {
+                    // 【核心】：月牙随风盘旋逻辑，对接星环物理引擎
+                    let cyOffset = this.cy + m.orbitYOffset * params.verticalSpread;
+                    let dx = m.x - this.cx;
+                    let dy = m.y - cyOffset;
+                    let trueY = dy / 0.3;
+                    let distFromCenter = sqrt(dx * dx + trueY * trueY) || 1;
+                    
+                    let tx = -trueY / distFromCenter; 
+                    let ty = dx / distFromCenter; ty *= 0.3;
+                    let rx = -dx / distFromCenter; 
+                    let ry = -trueY / distFromCenter; ry *= 0.3;
+                    
+                    let orbitForce = params.wind * 4.0 * (1 + noise(m.x * 0.01, globalTime));
+                    m.vx += tx * orbitForce;
+                    m.vy += ty * orbitForce;
+                    
+                    let targetRad = m.origOrbitRadius * params.orbitSpread;
+                    let pStrength = (distFromCenter - targetRad) * 0.03 * (params.wind + 0.1);
+                    m.vx += rx * pStrength;
+                    m.vy += ry * pStrength;
+                    
+                    m.vy -= params.wind * 0.6;
+                    
+                    m.vx *= 0.85; 
+                    m.vy *= 0.85;
+                    
+                    m.x += m.vx; 
+                    m.y += m.vy;
+                    
+                    m.angle += m.angleV * 4;
+                    m.alpha = lerp(m.alpha, 140, 0.05); // 飞舞时变半透明
+                }
+            }
+        }
+        render(params) {
+            push();
+            noStroke();
+            
+            // 解析并应用自定义颜色
+            let moonCol = color(params.colorMoon);
+            
+            for (let m of this.moons) {
+                push();
+                translate(m.x, m.y);
+                rotate(m.angle);
+                
+                moonCol.setAlpha(m.alpha * 0.9);
+                fill(moonCol);
+                
+                let r = m.currentSize;
+                beginShape();
+                vertex(0, -r);
+                bezierVertex(r * 1.5, -r, r * 1.5, r, 0, r); 
+                bezierVertex(r * 0.6, r, r * 0.6, -r, 0, -r); 
+                endShape(CLOSE);
+                
+                pop();
+            }
+            pop();
+        }
+    }
+
+    /* =========================================================
+       树枝类 
+    ========================================================= */
+    class Branch {
+      constructor(parent, targetLen, startThick, endThick, targetAngleOffset, absoluteBaseAngle, depth) {
+        this.parent = parent; this.targetLen = targetLen; this.startThick = startThick;
+        this.endThick = max(0.2, endThick); this.targetAngleOffset = targetAngleOffset;
+        this.absoluteBaseAngle = absoluteBaseAngle; this.depth = depth;
+        this.currentLen = 0; this.nodes = []; this.children = []; this.isFullyGrown = false;
+        this.seed = random(10000); this.windPhase = random(TWO_PI);
+        this.addNode(0, 0, 0, this.startThick);
+      }
+      addNode(x, y, localAngle, thick) {
+        let node = { x, y, localAngle, thick, extras: {}, worldX: 0, worldY: 0 };
+        node.extras.charcoal = [];
+        let numC = max(1, floor(thick));
+        for(let i=0; i<numC; i++) node.extras.charcoal.push({ ox: random(-thick*0.4, thick*0.4), oy: random(-thick*0.4, thick*0.4) });
+        node.extras.airSpeckles = [];
+        let numA = max(2, floor(thick * 1.5));
+        for(let i=0; i<numA; i++) node.extras.airSpeckles.push({ ox: cos(random(TWO_PI))*random(thick*0.8), oy: sin(random(TWO_PI))*random(thick*0.8), radius: random(0.5, 1.5) });
+        this.nodes.push(node);
+      }
+      grow(params) {
+        if (!this.isFullyGrown) {
+          this.currentLen += sysConfig.stepSize;
+          if (this.currentLen >= this.targetLen) { this.currentLen = this.targetLen; this.isFullyGrown = true; }
+          let t = this.currentLen / this.targetLen;
+          let curveT = min(1.0, t * 1.8);
+          let baseAngle = this.targetAngleOffset * easeOutQuad(curveT);
+          let noiseVal = noise(this.seed + this.currentLen * 0.02);
+          let noiseOffset = map(noiseVal, 0, 1, -params.bend, params.bend);
+          let currentAngle = baseAngle + noiseOffset * min(1.0, t * 4.0);
+          let thick = max(0.2, lerp(this.startThick, this.endThick, t));
+          let lastNode = this.nodes[this.nodes.length - 1];
+          let nextX = lastNode.x + sin(currentAngle) * sysConfig.stepSize;
+          let nextY = lastNode.y - cos(currentAngle) * sysConfig.stepSize;
+          this.addNode(nextX, nextY, currentAngle, thick);
+          if (this.isFullyGrown && this.depth < sysConfig.maxDepth) this.spawnChildren(params);
+          return true;
+        } else {
+          let anyGrowing = false;
+          for (let child of this.children) if (child.grow(params)) anyGrowing = true;
+          return anyGrowing;
+        }
+      }
+      spawnChildren(params) {
+        let numChildren = (this.depth === 0) ? floor(random(3, 5)) : (this.depth < 3 ? floor(random(2, 4)) : (random() > 0.4 ? 2 : 1));
+        let lastNode = this.nodes[this.nodes.length - 1];
+        let endAbsoluteAngle = this.absoluteBaseAngle + lastNode.localAngle;
+        let parentEndThick = lastNode.thick;
+        for (let i = 0; i < numChildren; i++) {
+          let baseOffset = random(-params.spread, params.spread);
+          let rawAbsolute = endAbsoluteAngle + baseOffset;
+          let pullUp = (0 - rawAbsolute) * sysConfig.upwardBias;
+          let finalAbsolute = rawAbsolute + pullUp;
+          let childTargetAngleOffset = finalAbsolute - endAbsoluteAngle;
+          let nextLen = this.targetLen * random(0.6, 0.85);
+          let childStartThick = parentEndThick * (numChildren === 1 ? 0.95 : 0.85);
+          let childEndThick = childStartThick * sysConfig.weightShrink;
+          this.children.push(new Branch(this, nextLen, childStartThick, childEndThick, childTargetAngleOffset, endAbsoluteAngle, this.depth + 1));
+        }
+      }
+      render(time, windMult, params, parentTransform, alpha) {
+        let windForce = map(this.depth, 0, sysConfig.maxDepth, 0.001, 0.08);
+        if (this.depth === 0) windForce *= 0.1; 
+        let sway = sin(time * 2 + this.windPhase) * noise(time + this.windPhase) * windForce * windMult;
+        let currentTransform = parentTransform.combine(0, 0, sway);
+        for (let n of this.nodes) { let wp = currentTransform.transform(n.x, n.y); n.worldX = wp.x; n.worldY = wp.y; }
+        push(); rotate(sway); this.drawPathLocal(params, alpha);
+        if (this.children.length > 0) {
+          let lastNode = this.nodes[this.nodes.length - 1]; translate(lastNode.x, lastNode.y); rotate(lastNode.localAngle);
+          let nextTransform = currentTransform.combine(lastNode.x, lastNode.y, lastNode.localAngle);
+          for (let child of this.children) child.render(time, windMult, params, nextTransform, alpha);
+        }
+        pop();
+      }
+      drawPathLocal(params, alpha) {
+        let style = params.brush; let thickMult = params.thickness; let [r, g, b] = sysConfig.treeColor;
+        let nodes = this.nodes; if (nodes.length < 2) return;
+        if (style === 'pencil') {
+          for(let j=0; j<2; j++) {
+            stroke(r, g, b, 160 * alpha); noFill(); beginShape();
+            for(let i=0; i<nodes.length; i++) {
+              let n = nodes[i]; strokeWeight(max(0.5, n.thick * 0.35 * thickMult));
+              vertex(n.x + (noise(j, i*0.2)-0.5)*n.thick*0.3*thickMult, n.y + (noise(j+10, i*0.2)-0.5)*n.thick*0.3*thickMult);
+            }
+            endShape();
+          }
+        } else if (style === 'charcoal') {
+           for(let i=0; i<nodes.length-1; i++) {
+              let n1 = nodes[i], n2 = nodes[i+1]; strokeCap(SQUARE);
+              for(let k=0; k<n1.extras.charcoal.length; k++) {
+                 stroke(r, g, b, 100 * alpha); strokeWeight(random(0.6, 1.2) * thickMult);
+                 line(n1.x + n1.extras.charcoal[k].ox*thickMult, n1.y + n1.extras.charcoal[k].oy*thickMult, n2.x + (n2.extras.charcoal[k]?n2.extras.charcoal[k].ox:n1.extras.charcoal[k].ox)*thickMult, n2.y + (n2.extras.charcoal[k]?n2.extras.charcoal[k].oy:n1.extras.charcoal[k].oy)*thickMult);
+              }
+           }
+        } else if (style === 'airbrush') {
+           noStroke(); fill(r, g, b, 70 * alpha);
+           for(let n of nodes) for(let sp of n.extras.airSpeckles) circle(n.x + sp.ox*thickMult, n.y + sp.oy*thickMult, sp.radius*thickMult);
+        }
+      }
+      renderWorld(params, alpha = 255) { 
+        this.drawPathWorld(params, alpha); 
+        for (let child of this.children) child.renderWorld(params, alpha); 
+      }
+      drawPathWorld(params, alpha) {
+        let style = params.brush; let thickMult = params.thickness; let [r, g, b_col] = sysConfig.treeColor;
+        let nodes = this.nodes; if (nodes.length < 2) return;
+        let aRatio = alpha / 255;
+        if (style === 'pencil') {
+          stroke(r, g, b_col, 160 * aRatio); noFill(); beginShape();
+          for(let n of nodes) { strokeWeight(max(0.5, n.thick*0.35*thickMult)); vertex(n.worldX, n.worldY); } endShape();
+        } else if (style === 'charcoal') {
+          for(let i=0; i<nodes.length-1; i++) {
+            let n1 = nodes[i], n2 = nodes[i+1]; strokeCap(SQUARE);
+            for(let k=0; k<n1.extras.charcoal.length; k++) {
+              stroke(r, g, b_col, 100 * aRatio); strokeWeight(random(0.6, 1.2)*thickMult);
+              line(n1.worldX + n1.extras.charcoal[k].ox*thickMult, n1.worldY + n1.extras.charcoal[k].oy*thickMult, n2.worldX + (n2.extras.charcoal[k]?n2.extras.charcoal[k].ox:n1.extras.charcoal[k].ox)*thickMult, n2.worldY + (n2.extras.charcoal[k]?n2.extras.charcoal[k].oy:n1.extras.charcoal[k].oy)*thickMult);
+            }
+          }
+        } else if (style === 'airbrush') {
+           noStroke(); fill(r, g, b_col, 70 * aRatio);
+           for(let n of nodes) for(let sp of n.extras.airSpeckles) circle(n.worldX + sp.ox*thickMult, n.worldY + sp.oy*thickMult, sp.radius*thickMult);
+        }
+      }
+    }
+
+    /* =========================================================
+       物理引擎类 (外围细枝)
+    ========================================================= */
+    class Particle {
+      constructor(x, y) {
+        this.pos = createVector(x, y); this.oldPos = createVector(x, y); this.acc = createVector(0, 0);
+        this.orbitRadius = 0; this.orbitYOffset = 0; 
+      }
+      update(damping) {
+        let vel = p5.Vector.sub(this.pos, this.oldPos); vel.mult(damping);
+        this.oldPos.set(this.pos); this.pos.add(vel).add(this.acc); this.acc.set(0, 0);
+      }
+    }
+    class Constraint {
+      constructor(p1, p2, dist, stiffness) { this.p1 = p1; this.p2 = p2; this.restDist = dist; this.stiffness = stiffness; }
+      solve() {
+        let delta = p5.Vector.sub(this.p2.pos, this.p1.pos);
+        let dist = delta.mag(); if (dist === 0) return;
+        let offset = p5.Vector.mult(delta, ((dist - this.restDist) / dist) * this.stiffness * 0.5);
+        this.p1.pos.add(offset); this.p2.pos.sub(offset);
+      }
+    }
+    class SkirtLaceSystem {
+      constructor(branches, clickPos, uiParams) {
+        this.branches = branches; this.particles = []; this.constraints = [];
+        this.vortexCenter = { x: clickPos.x, y: clickPos.y };
+        for (let b of branches) {
+            let n0 = b.nodes[0]; let trueY = (n0.worldY - this.vortexCenter.y) / 0.3;
+            let originalRadius = Math.sqrt(pow(n0.worldX - this.vortexCenter.x, 2) + pow(trueY, 2));
+            this.buildFromBranch(b, null, null, uiParams, originalRadius * random(0.8, 1.2), random(-120, 120));
+        }
+      }
+      buildFromBranch(branch, parentP, grandParentP, uiParams, orbitRadius, branchYOffset) {
+        let pp = parentP; let gpp = grandParentP;
+        for (let i = 0; i < branch.nodes.length; i++) {
+          let n = branch.nodes[i]; let p = new Particle(n.worldX, n.worldY);
+          p.orbitRadius = orbitRadius; p.orbitYOffset = branchYOffset + (n.worldY - branch.nodes[0].worldY) * 0.3;
+          n.p = p; this.particles.push(p);
+          if (pp) this.constraints.push(new Constraint(pp, p, p5.Vector.dist(pp.pos, p.pos), uiParams.stretch));
+          if (gpp) this.constraints.push(new Constraint(gpp, p, p5.Vector.dist(gpp.pos, p.pos), uiParams.stiffness));
+          gpp = pp; pp = p;
+        }
+      }
+      updatePhysics(time, uiParams, bParams) {
+        let cx = this.vortexCenter.x; let cy = this.vortexCenter.y;
+        for (let p of this.particles) {
+          let cyOffset = cy + p.orbitYOffset * uiParams.verticalSpread;
+          let dx = p.pos.x - cx; let dy = p.pos.y - cyOffset; let trueY = dy / 0.3;
+          let dist = Math.sqrt(dx * dx + trueY * trueY) || 1;
+          let tx = -trueY / dist; let ty = dx / dist; ty *= 0.3; 
+          let rx = -dx / dist; let ry = -trueY / dist; ry *= 0.3;
+          let orbitForce = uiParams.wind * 4.0 * (1 + noise(p.pos.x * 0.01, time));
+          p.acc.add(tx*orbitForce, ty*orbitForce);
+          let pStrength = (dist - p.orbitRadius * uiParams.orbitSpread) * 0.03 * (uiParams.wind + 0.1); 
+          p.acc.add(rx*pStrength, ry*pStrength);
+          p.acc.add(0, -uiParams.wind * 0.5); p.update(bParams.damping);
+        }
+        for (let i = 0; i < 10; i++) for (let c of this.constraints) c.solve();
+        for (let b of this.branches) for (let n of b.nodes) { n.worldX = n.p.pos.x; n.worldY = n.p.pos.y; }
+      }
+      renderWorld(params, alpha = 255) { for (let b of this.branches) b.renderWorld(params, alpha); }
+    }
+
+    /* =========================================================
+       【布朗运动烟雾系统】从局部到整体的分批粉碎扩散
+    ========================================================= */
+    class TrunkParticleSystem {
+        constructor(branch, clickPos) {
+            this.particles = [];
+            this.cx = clickPos.x;
+            this.cy = clickPos.y;
+            this.time = 0;
+            this.branches = [branch];
+            this.trunkFade = 1.0; 
+            
+            let collectParticles = (b) => {
+                b.crumbleBaseTime = random(0, 3.0); 
+                
+                for (let n of b.nodes) {
+                    let numP = max(4, floor(n.thick * 2.5));
+                    for (let i = 0; i < numP; i++) {
+                        let ox = random(-n.thick, n.thick) * 0.8;
+                        let oy = random(-n.thick, n.thick) * 0.8;
+                        
+                        let p = {
+                            pos: createVector(n.worldX + ox, n.worldY + oy),
+                            vel: createVector(0, 0),
+                            active: false,
+                            activationTime: b.crumbleBaseTime + random(0, 0.5), 
+                            life: 1.0,
+                            seed: random(10000),
+                            thickOffset: random(0.5, 1.5)
+                        };
+                        this.particles.push(p);
+                    }
+                }
+                for (let child of b.children) collectParticles(child);
+            };
+            collectParticles(branch);
+        }
+
+        update(params) {
+            this.time += 0.015;
+            this.trunkFade -= 0.005 * params.pCrumble;
+            if (this.trunkFade < 0) this.trunkFade = 0;
+
+            for (let p of this.particles) {
+                if (!p.active) {
+                    if (this.time * params.pCrumble > p.activationTime) {
+                        p.active = true;
+                    }
+                } else {
+                    if (p.life > 0) {
+                        let nseAngle = noise(p.pos.x * 0.015, p.pos.y * 0.015, this.time * 0.5 + p.seed) * TWO_PI * 4;
+                        let nseForce = p5.Vector.fromAngle(nseAngle).mult(0.08 * params.pSpread);
+                        p.vel.add(nseForce);
+                        
+                        let dx = p.pos.x - this.cx;
+                        let dy = p.pos.y - this.cy;
+                        let distToCenter = sqrt(dx*dx + dy*dy) || 1;
+                        let expandForce = createVector(dx/distToCenter, dy/distToCenter).mult(0.01 * params.pSpread);
+                        p.vel.add(expandForce);
+
+                        p.vel.add(0, -0.015);
+                        p.vel.mult(0.92); 
+                        p.pos.add(p.vel);
+                        p.life -= (1.0 / (params.pFade * 60)); 
+                    }
+                }
+            }
+        }
+
+        render(params) {
+            let [r, g, b] = sysConfig.treeColor;
+            
+            if (this.trunkFade > 0.01) {
+                for(let branch of this.branches) {
+                    branch.renderWorld(params, this.trunkFade * 255);
+                }
+            }
+
+            noStroke();
+            let pSize = params.pSize;
+            for (let p of this.particles) {
+                if (p.active && p.life > 0) {
+                    fill(r, g, b, p.life * 255 * 0.5);
+                    circle(p.pos.x, p.pos.y, p.thickOffset * pSize * (0.5 + p.life * 0.5)); 
+                }
+            }
+        }
+    }
+
+    /* =========================================================
+       【同步显影引擎】：灵魂致密体块重组
+    ========================================================= */
+    class MorphFleshSystem {
+        constructor(branches, targets) {
+            this.skeletonNodes = [];
+            this.fleshPoints = targets.blackPoints; 
+            this.mistPoints = targets.mistPoints;   
+            this.progress = 0;
+            this.isMistActive = targets.mistPoints.length > 0;
+
+            function collectNodes(b, list) {
+                for(let n of b.nodes) { 
+                    n.origWorldX = n.worldX; n.origWorldY = n.worldY; n.fleshPoints = []; list.push(n); 
+                }
+                for(let child of b.children) collectNodes(child, list);
+            }
+            collectNodes(branches[0], this.skeletonNodes); 
+        }
+
+        assignFleshTargets(params) {
+            if (this.fleshPoints.length === 0 || this.skeletonNodes.length === 0) return;
+            let densityMult = params.manifestation; 
+            for (let fp of this.fleshPoints) {
+                let numAttracted = ceil(2 * densityMult * random(0.8, 1.2)); 
+                for(let i=0; i<numAttracted; i++) {
+                   let minDist = Infinity;
+                   let closestNode = null;
+                   for (let n of this.skeletonNodes) {
+                       let d = dist(fp.x, fp.y, n.origWorldX, n.origWorldY);
+                       if (d < minDist) { minDist = d; closestNode = n; }
+                   }
+                   if (closestNode) closestNode.fleshPoints.push({x: fp.x, y: fp.y, seed: random(10000)});
+                }
+            }
+        }
+
+        update(time, params) {
+            if (this.progress < 1.0) {
+               this.progress += 0.003; 
+               if (this.progress > 1.0) this.progress = 1.0;
+            }
+        }
+
+        renderWorld(time, params) {
+            let [r, g, b] = sysConfig.treeColor;
+            let thickMult = params.thickness;
+            strokeCap(ROUND);
+            let fleshAlphaMult = params.manifestation; 
+            
+            let hoverX = cos(time * 1.2) * 2.5; 
+            let hoverY = sin(time * 1.5) * 3.5; 
+
+            for (let n of this.skeletonNodes) {
+                if (n.fleshPoints && n.fleshPoints.length > 0) {
+                    let pLen = floor(n.fleshPoints.length * this.progress);
+                    for (let i = 0; i < pLen; i++) {
+                        let fp = n.fleshPoints[i];
+                        
+                        let breath = map(noise(fp.x * 0.015, fp.y * 0.015, time * 0.8), 0, 1, 0.2, 2.5);
+                        let alphaVal = constrain(90 * fleshAlphaMult * breath, 0, 255);
+                        
+                        let driftX = hoverX + (noise(fp.seed, time * 0.5) - 0.5) * 3.0;
+                        let driftY = hoverY + (noise(fp.seed + 100, time * 0.5) - 0.5) * 3.0;
+                        let finalX = fp.x + driftX;
+                        let finalY = fp.y + driftY;
+
+                        stroke(r, g, b, alphaVal);
+                        strokeWeight(random(0.6, 1.4) * thickMult);
+                        
+                        let scatterAmp = params.scatter * thickMult;
+                        let ox = (noise(fp.x * 0.05, fp.seed) - 0.5) * scatterAmp;
+                        let oy = (noise(fp.y * 0.05, fp.seed + 100) - 0.5) * scatterAmp;
+                        line(finalX, finalY, finalX + ox, finalY + oy);
+                        
+                        if (breath > 2.0 && random() > 0.85) {
+                            stroke(255, 255, 255, alphaVal * 0.9);
+                            strokeWeight(random(1.5, 3.0) * thickMult);
+                            point(finalX + ox * 0.5, finalY + oy * 0.5);
+                        }
+                    }
+                }
+            }
+
+            if (this.isMistActive && this.progress > 0.1) {
+               noStroke();
+               let mistProg = constrain(this.progress * 1.5, 0, 1);
+               for(let mp of this.mistPoints) {
+                   let breath = map(noise(mp.x * 0.015, mp.y * 0.015, time * 0.8), 0, 1, 0.5, 2.2);
+                   let alphaVal = constrain(mp.alpha * 0.6 * mistProg * params.manifestation * breath, 0, 255);
+                   fill(r, g, b, alphaVal);
+                   
+                   let driftX = hoverX + (noise(mp.seed, time * 0.5) - 0.5) * 3.0;
+                   let driftY = hoverY + (noise(mp.seed + 100, time * 0.5) - 0.5) * 3.0;
+
+                   let rad = random(mp.thick * 0.6, mp.thick * 1.6) * thickMult;
+                   circle(mp.x + driftX + (noise(mp.seed)-0.5)*mp.jitter, mp.y + driftY + (noise(mp.seed+100)-0.5)*mp.jitter, rad);
+               }
+            }
+        }
+    }
+
+    // 图像遮罩采样
+    function prepareMaskSampling(params) {
+        let pg = createGraphics(width, height);
+        pg.pixelDensity(1); pg.background(255); pg.noStroke();
+        
+        let cx = width / 2 + params.maskX; 
+        let cy = height * 0.80 + params.maskY; 
+        
+        let H = height * 0.308 * params.maskScale; 
+
+        // 不再生成程序化虚影，完全依赖 maskImg。此函数仅在有 maskImg 时调用
+        if (maskImg && maskImg.width > 0) {
+            let aspect = maskImg.width / maskImg.height;
+            pg.image(maskImg, cx - H * aspect/2, cy - H, H * aspect, H);
+        } 
+
+        pg.loadPixels();
+        let blackPoints = [];
+        let mistPoints = [];
+        
+        for (let y = 0; y < pg.height; y += 2) {
+            for (let x = 0; x < pg.width; x += 2) {
+                let idx = (y * pg.width + x) * 4;
+                let r = pg.pixels[idx];
+                if (r < 128) { 
+                    blackPoints.push({x: x, y: y});
+                } else if (r < 240) { 
+                    let normR = map(r, 128, 240, 1.0, 0); 
+                    mistPoints.push({x: x, y: y, alpha: normR * 60, thick: normR * 3, jitter: (1-normR) * 12, seed: random(10000)});
+                }
+            }
+        }
+        pg.remove();
+        return { blackPoints, mistPoints };
+    }
+
+    function detachAllTwigs(branch, threshold, detachedList) {
+        for (let i = branch.children.length - 1; i >= 0; i--) {
+            let child = branch.children[i];
+            if (child.startThick < threshold) {
+                branch.children.splice(i, 1);
+                detachedList.push(child);
+                detachAllTwigs(child, Infinity, detachedList); 
+            } else { detachAllTwigs(child, threshold, detachedList); }
+        }
+    }
+
+    function updateWorldCoords(branch, time, windMult, parentTransform) {
+        let windForce = map(branch.depth, 0, sysConfig.maxDepth, 0.001, 0.08);
+        if (branch.depth === 0) windForce *= 0.1; 
+        let sway = sin(time * 2 + branch.windPhase) * noise(time + branch.windPhase) * windForce * windMult;
+        let currentTransform = parentTransform.combine(0, 0, sway);
+        for (let n of branch.nodes) {
+          let wp = currentTransform.transform(n.x, n.y);
+          n.worldX = wp.x; n.worldY = wp.y;
+        }
+        if (branch.children.length > 0) {
+          let lastNode = branch.nodes[branch.nodes.length - 1];
+          let nextTransform = currentTransform.combine(lastNode.x, lastNode.y, lastNode.localAngle);
+          for (let child of branch.children) updateWorldCoords(child, time, windMult, nextTransform);
+        }
+    }
+
+    function mousePressed() {
+      if (mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) return;
+      if (!treeFinished || isSkirtMode) return;
+      
+      let detachedList = [];
+      detachAllTwigs(treeRoot, basePhysics.twigThreshold, detachedList);
+      
+      if (detachedList.length > 0) {
+          let uiParams = getUIParams();
+          
+          let rootTransform = new Transform2D(width / 2, height * 0.85, 0);
+          updateWorldCoords(treeRoot, globalTime, windMultiplier, rootTransform);
+          
+          skirtLace = new SkirtLaceSystem(detachedList, {x: mouseX, y: mouseY}, uiParams);
+          
+          isSkirtMode = true;
+          morphStartTime = globalTime; 
+          
+          // 【核心分支】：有无遮罩的差异化处理
+          if (maskImg && maskImg.width > 0) {
+              trunkParticles = new TrunkParticleSystem(treeRoot, {x: mouseX, y: mouseY});
+              document.getElementById('status-text').innerText = "枯木如烟尘消散，灵魂于暗影重塑。";
+              
+              let targets = prepareMaskSampling(uiParams);
+              morphFleshSystem = new MorphFleshSystem([treeRoot], targets);
+              morphFleshSystem.assignFleshTargets(uiParams);
+          } else {
+              wordDropSystem = new WordDropSystem(treeRoot);
+              moonGardenSystem = new MoonGardenSystem();
+              document.getElementById('status-text').innerText = "思念与月牙从枝头剥落，半数随风起舞，半数落地成霜。";
+          }
+      }
+    }
+  </script>
+</body>
+</html>

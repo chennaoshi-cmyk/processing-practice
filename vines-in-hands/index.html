@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文字动态视频剪影与藤蔓交互特效</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #121212;
+      color: #e0e0e0;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 320px;
+      background-color: #1e1e1e;
+      border-right: 1px solid #333;
+      padding: 20px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      z-index: 10;
+      box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+    }
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: auto;
+      background-color: #000;
+      position: relative;
+    }
+    h2 { margin: 0 0 10px 0; font-size: 18px; color: #fff; border-bottom: 1px solid #444; padding-bottom: 8px; }
+    h3 { margin: 10px 0 5px 0; font-size: 14px; color: #aaa; }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    label { font-size: 13px; color: #bbb; }
+    input[type="range"] { width: 100%; cursor: pointer; }
+    input[type="number"] { width: 60px; background: #333; border: 1px solid #555; color: #fff; padding: 4px; border-radius: 4px; font-size: 12px;}
+    input[type="color"] { background: transparent; border: none; cursor: pointer; width: 30px; height: 30px; padding: 0; }
+    input[type="file"] { font-size: 12px; color: #aaa; }
+    input[type="file"]::file-selector-button { background: #333; color: white; border: 1px solid #555; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    input[type="file"]::file-selector-button:hover { background: #444; }
+    .value-display { font-size: 12px; color: #888; width: 35px; text-align: right; }
+    .hint { font-size: 11px; color: #ff9800; margin-top: -5px; line-height: 1.4; }
+    
+    /* 切换开关样式 */
+    .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
+    .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #4CAF50; }
+    input:checked + .slider:before { transform: translateX(20px); }
+  </style>
+</head>
+<body>
+
+  <!-- 控制面板 -->
+  <div id="sidebar">
+    <h2>🎨 基础参数设置</h2>
+
+    <div class="control-group">
+      <label>1. 上传剪影视频 / 图片</label>
+      <input type="file" id="mediaUpload" accept="image/*,video/*">
+      <div class="hint">默认识别白底黑主体</div>
+    </div>
+    
+    <div class="control-group">
+      <div class="control-row">
+        <label style="color: #ff9800;">反转识别 (适应黑底白体视频)</label>
+        <label class="switch">
+          <input type="checkbox" id="invertMask">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <div class="control-row">
+        <label>画布宽度 / 高度</label>
+        <div style="display:flex; gap:5px;">
+          <input type="number" id="canvasWidth" value="800" step="50" style="width:50px;">
+          <input type="number" id="canvasHeight" value="1000" step="50" style="width:50px;">
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <div class="control-row">
+        <label>手掌文字颜色 / 画布背景</label>
+        <div style="display:flex; gap:5px;">
+          <input type="color" id="fontColor" value="#ffffff">
+          <input type="color" id="bgColor" value="#000000">
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <div class="control-row"><label>文字推开距离 (排斥力)</label><span class="value-display" id="val-repelRadius">45</span></div>
+      <input type="range" id="repelRadius" min="0" max="150" value="45" step="5">
+    </div>
+    
+    <div class="control-group">
+      <div class="control-row"><label>文字复位速度</label><span class="value-display" id="val-returnSpeed">0.08</span></div>
+      <input type="range" id="returnSpeed" min="0.01" max="0.3" value="0.08" step="0.01">
+    </div>
+
+    <div class="control-group">
+      <div class="control-row"><label>手掌整体浮动幅度</label><span class="value-display" id="val-globalFloatAmp">6</span></div>
+      <input type="range" id="globalFloatAmp" min="0" max="30" value="6" step="1">
+    </div>
+
+    <h2>🌿 藤蔓与花朵控制</h2>
+    
+    <!-- 新增：追踪主体开关 -->
+    <div class="control-group">
+      <div class="control-row"><label style="color: #64FF64;">藤蔓跟踪视频主体力度</label><span class="value-display" id="val-trackingStrength">0.6</span></div>
+      <input type="range" id="trackingStrength" min="0" max="1.0" value="0.6" step="0.05">
+      <div class="hint">藤蔓随视频里的手自动平滑偏移的幅度</div>
+    </div>
+
+    <div class="control-group" style="margin-top: 5px;">
+      <div class="control-row">
+        <label>显示编辑控制线 (3条彩色虚线)</label>
+        <label class="switch">
+          <input type="checkbox" id="editMode" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    
+    <div class="control-group">
+      <div class="control-row">
+        <label style="color: #4CAF50; font-weight: bold;">🔒 锁定当前轨迹 (防误触)</label>
+        <label class="switch">
+          <input type="checkbox" id="lockTrajectory" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <h3>🔹 藤蔓参数 (共3条)</h3>
+    <div class="control-group">
+      <div class="control-row">
+        <label>藤蔓 1 / 2 / 3 入场时间</label>
+        <div style="display:flex; gap:2px;">
+          <input type="number" id="vineDelay1" value="0" step="0.1">
+          <input type="number" id="vineDelay2" value="0.3" step="0.1">
+          <input type="number" id="vineDelay3" value="0.6" step="0.1">
+        </div>
+      </div>
+    </div>
+    <div class="control-group">
+      <div class="control-row"><label>入场文字间距</label><span class="value-display" id="val-vineSpacing">40</span></div>
+      <input type="range" id="vineSpacing" min="15" max="100" value="40" step="1">
+    </div>
+    <div class="control-group">
+      <div class="control-row"><label>藤蔓生长长度 (比例)</label><span class="value-display" id="val-vineMaxLength">1.0</span></div>
+      <input type="range" id="vineMaxLength" min="0.1" max="1.0" value="1.0" step="0.05">
+    </div>
+    <div class="control-group">
+      <div class="control-row"><label>藤蔓生长基准速度</label><span class="value-display" id="val-vineSpeed">0.15</span></div>
+      <input type="range" id="vineSpeed" min="0.05" max="0.5" value="0.15" step="0.05">
+    </div>
+    <div class="control-group">
+      <div class="control-row">
+        <label>小叶片尺寸 (Min - Max)</label>
+        <div style="display:flex; gap:5px;">
+          <input type="number" id="leafMinSize" value="3" step="1">
+          <input type="number" id="leafMaxSize" value="12" step="1">
+        </div>
+      </div>
+    </div>
+    <div class="control-group">
+      <div class="control-row">
+        <label>藤蔓主干 / 叶片颜色</label>
+        <div style="display:flex; gap:5px;">
+          <input type="color" id="vineBranchColor" value="#228B22">
+          <input type="color" id="vineLeafColor" value="#90EE90">
+        </div>
+      </div>
+    </div>
+
+    <h3>🌸 花朵动态参数</h3>
+    <div class="control-group">
+      <div class="control-row"><label>手掌内花朵数量</label><span class="value-display" id="val-flowerCountInside">80</span></div>
+      <input type="range" id="flowerCountInside" min="0" max="200" value="80" step="5">
+    </div>
+    <div class="control-group">
+      <div class="control-row"><label>手掌外花朵数量</label><span class="value-display" id="val-flowerCountOutside">20</span></div>
+      <input type="range" id="flowerCountOutside" min="0" max="200" value="20" step="5">
+    </div>
+    <div class="control-group">
+      <div class="control-row">
+        <label>藤蔓花朵尺寸 (Min - Max)</label>
+        <div style="display:flex; gap:5px;">
+          <input type="number" id="vineFlowerMinSize" value="10" step="1">
+          <input type="number" id="vineFlowerMaxSize" value="30" step="1">
+        </div>
+      </div>
+    </div>
+    <hr style="border:0; border-top:1px solid #333; margin: 5px 0;">
+    <div class="control-group">
+      <div class="control-row"><label>静止后背景花朵数量</label><span class="value-display" id="val-bgFlowerCount">10</span></div>
+      <input type="range" id="bgFlowerCount" min="0" max="50" value="10" step="1">
+    </div>
+    <div class="control-group">
+      <div class="control-row">
+        <label>背景花朵尺寸 (Min - Max)</label>
+        <div style="display:flex; gap:5px;">
+          <input type="number" id="bgFlowerMinSize" value="20" step="1">
+          <input type="number" id="bgFlowerMaxSize" value="45" step="1">
+        </div>
+      </div>
+    </div>
+    <div class="control-group">
+      <div class="control-row">
+        <label>黄 / 粉 / 紫 花朵颜色</label>
+        <div style="display:flex; gap:5px;">
+          <input type="color" id="flowerColor1" value="#FFD700">
+          <input type="color" id="flowerColor2" value="#FFB6C1">
+          <input type="color" id="flowerColor3" value="#9370DB">
+        </div>
+      </div>
+    </div>
+
+    <div class="control-group" style="margin-top: 15px; display: flex; gap: 10px;">
+      <button id="btnPlay" style="flex: 1; background:#4CAF50; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">▶ 播放特效</button>
+      <button id="btnReset" style="flex: 1; background:#f44336; color:white; border:none; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">↺ 重置状态</button>
+    </div>
+  </div>
+
+  <!-- 画布容器 -->
+  <div id="canvas-container"></div>
+
+  <script>
+    // 基础配置数据
+    const config = {
+      text: "剪下花朵的时候竟然会产生一种想象中的疼痛，是在剪贴梗海棠的时候第一次感觉到的。锋利的刀口慢慢陷进湿润壮实的枝干，仿佛能挤出血液般的汁液。 但紫叶李花就不同，那种想象中的疼痛感如它本身的枝干般干枯纤细。 突然又想起那句话：我们只能看到自己理解的，只能理解与自己相似的。那天在地上捡到一片红色的叶子，放在掌心不敢用力握。摊开时突然发现掌纹似乎也和叶脉一般交错。 但或许是树枝会更形象些，是冬天落叶凋敝的枝头，等待春天花开。 掌纹，确实是一个适合开花长叶的地方。",
+      
+      fontSize: 5,
+      letterSpacing: 2,
+      lineHeight: 5,
+      floatAmplitude: 0, 
+      gapRadius: 2, 
+
+      fontColor: '#ffffff',
+      bgColor: '#000000',
+      canvasWidth: 800,
+      canvasHeight: 1000,
+      globalFloatAmp: 6, 
+      floatSpeed: 0.03,
+      invertMask: false, 
+      trackingStrength: 0.6, // 新增：视频跟踪力度
+      
+      repelRadius: 45,        
+      repelStrength: 0.8,
+      returnSpeed: 0.08,      
+      
+      vineText: "掌纹，确实是一个适合开花长叶的地方。",
+      vineSpacing: 40,
+      vineTextColor: '#ffffff', 
+      vineSpeed: 0.15,          
+      vineMaxLength: 1.0,       
+      vineFontSize: 10,       
+      vineMaxThickness: 2,    
+      leafMinSize: 3,         
+      leafMaxSize: 12,
+      vineDelay1: 0,
+      vineDelay2: 0.3,
+      vineDelay3: 0.6,
+      vineBranchColor: '#228B22',
+      vineLeafColor: '#90EE90',
+      
+      flowerCountInside: 80,    
+      flowerCountOutside: 20,   
+      bgFlowerCount: 10,      
+      flowerDelay: 0.04,      
+      
+      vineFlowerMinSize: 10,  
+      vineFlowerMaxSize: 30,  
+      bgFlowerMinSize: 20,    
+      bgFlowerMaxSize: 45,    
+
+      flowerWindSpeed: 0.02,  
+      flowerDropRate: 15,     
+      flowerColor1: '#FFD700', 
+      flowerColor2: '#FFB6C1', 
+      flowerColor3: '#9370DB', 
+      
+      isEditMode: true,
+      lockTrajectory: true    
+    };
+
+    let particles = []; 
+    
+    // 媒体资源
+    let sourceMedia = null;
+    let isVideo = false;
+    let maskGraphics;
+
+    // --- 动态跟踪质心系统 ---
+    let baseMaskCenter = null;
+    let currentMaskCenter = null;
+    let trackOffsetX = 0;
+    let trackOffsetY = 0;
+    
+    const NUM_VINES = 3;
+    let curvePoints = []; 
+    let vines = [];       
+    let globalVineProgress = -0.25; 
+    let fallingFlowers = []; 
+    let bgFlowers = [];   
+    let isPlaying = false; 
+
+    let draggingPoint = null;
+    let draggingVineIdx = -1;
+
+    let pointColors = ['#3296FF', '#FF6464', '#64FF64']; 
+
+    function initCurvePoints() {
+      let w = config.canvasWidth;
+      let h = config.canvasHeight;
+      let cx = w / 2;
+      let cy = h / 2 - 100; 
+      
+      curvePoints = [];
+      
+      curvePoints.push([
+        { x: cx - 220, y: cy + 380, type: 'anchor' },             
+        { x: cx - 120, y: cy + 280, type: 'control' },
+        { x: cx - 20,  y: cy + 120, type: 'anchor' },   
+        { x: cx + 20,  y: cy + 50,  type: 'control' },
+        { x: cx - 10,  y: cy - 40,  type: 'anchor' },   
+        { x: cx - 20,  y: cy - 120, type: 'control' },
+        { x: cx + 180, y: cy - 280, type: 'anchor' }    
+      ]);
+
+      curvePoints.push([
+        { x: cx - 280, y: cy + 60, type: 'anchor' },
+        { x: cx - 120, y: cy - 80, type: 'control' },
+        { x: cx - 50,  y: cy + 20, type: 'anchor' },
+        { x: cx + 50,  y: cy + 120, type: 'control' },
+        { x: cx + 80,  y: cy + 20, type: 'anchor' },
+        { x: cx + 180, y: cy - 80, type: 'control' },
+        { x: cx + 280, y: cy - 120, type: 'anchor' }
+      ]);
+
+      curvePoints.push([
+        { x: cx + 220, y: cy + 320, type: 'anchor' },
+        { x: cx + 120, y: cy + 220, type: 'control' },
+        { x: cx + 30,  y: cy + 100, type: 'anchor' },
+        { x: cx - 60,  y: cy + 50,  type: 'control' },
+        { x: cx - 90,  y: cy - 30,  type: 'anchor' },  
+        { x: cx - 150, y: cy - 120, type: 'control' },
+        { x: cx - 260, y: cy - 180, type: 'anchor' }
+      ]);
+    }
+
+    function getCurveData(t, pts) {
+      let pt, dir;
+      let localT;
+      let p0, p1, p2;
+      
+      if (t <= 1/3) {
+        localT = t * 3; 
+        p0 = pts[0]; p1 = pts[1]; p2 = pts[2];
+      } else if (t <= 2/3) {
+        localT = (t - 1/3) * 3; 
+        p0 = pts[2]; p1 = pts[3]; p2 = pts[4];
+      } else {
+        localT = (t - 2/3) * 3; 
+        p0 = pts[4]; p1 = pts[5]; p2 = pts[6];
+      }
+      
+      let x = (1 - localT)*(1 - localT)*p0.x + 2*(1 - localT)*localT*p1.x + localT*localT*p2.x;
+      let y = (1 - localT)*(1 - localT)*p0.y + 2*(1 - localT)*localT*p1.y + localT*localT*p2.y;
+      pt = createVector(x, y);
+      
+      let dx = 2*(1 - localT)*(p1.x - p0.x) + 2*localT*(p2.x - p1.x);
+      let dy = 2*(1 - localT)*(p1.y - p0.y) + 2*localT*(p2.y - p1.y);
+      dir = createVector(dx, dy).normalize();
+      
+      return { pos: pt, dir: dir };
+    }
+
+    function getCurveDataExtrapolated(t_i, v) {
+      if (t_i < 0) {
+        let s0 = getCurveData(0, v.pts);
+        return { pos: p5.Vector.add(s0.pos, p5.Vector.mult(s0.dir, t_i * v.curveLen)), dir: s0.dir.copy() };
+      } else if (t_i > 1) {
+        let s1 = getCurveData(1, v.pts);
+        return { pos: p5.Vector.add(s1.pos, p5.Vector.mult(s1.dir, (t_i - 1) * v.curveLen)), dir: s1.dir.copy() };
+      } else {
+        return getCurveData(t_i, v.pts);
+      }
+    }
+
+    function getCurveLength(pts) {
+      let len = 0;
+      let prevPt = getCurveData(0, pts).pos;
+      for (let i = 1; i <= 100; i++) {
+        let pt = getCurveData(i / 100, pts).pos;
+        len += p5.Vector.dist(prevPt, pt);
+        prevPt = pt;
+      }
+      return len;
+    }
+
+    function getWaveOffset(t_val, dir) {
+      let perp = createVector(-dir.y, dir.x);
+      let n = noise(t_val * 4, frameCount * 0.01);
+      let amt = sin(frameCount * 0.015 + t_val * 10) * (n * 3 + 0.5); 
+      return p5.Vector.mult(perp, amt);
+    }
+
+    function getSwayOffset(t, vineInstance) {
+      if (vineInstance.progress < config.vineMaxLength) return createVector(0, 0);
+      let distToTip = config.vineMaxLength - t;
+      if (distToTip > 0.08) return createVector(0, 0); 
+      
+      let intensity = map(distToTip, 0, 0.08, 1, 0);
+      let dir = getCurveData(t, vineInstance.pts).dir;
+      let perp = createVector(-dir.y, dir.x);
+      let swayAmt = sin(frameCount * 0.03 + vineInstance.delay * 10) * 2.5 * intensity;
+      return perp.mult(swayAmt);
+    }
+
+    function initVine() {
+      globalVineProgress = -0.25; 
+      vines = [];
+      fallingFlowers = [];
+      bgFlowers = [];
+      
+      // 重置主体跟踪中心点
+      baseMaskCenter = null;
+      currentMaskCenter = null;
+      trackOffsetX = 0;
+      trackOffsetY = 0;
+      
+      let delays = [config.vineDelay1, config.vineDelay2, config.vineDelay3]; 
+      
+      let attemptsBg = 0;
+      while (bgFlowers.length < config.bgFlowerCount && attemptsBg < 5000) {
+        attemptsBg++;
+        let rx = random(0, config.canvasWidth);
+        let ry = random(0, config.canvasHeight);
+        if (checkInsideHand(rx, ry)) {
+            bgFlowers.push({
+                x: rx,
+                y: ry,
+                colorKey: random(['flowerColor1', 'flowerColor2', 'flowerColor3']),
+                maxSize: random(config.bgFlowerMinSize, config.bgFlowerMaxSize),
+                currentSize: 0,
+                rotOffset: random(TWO_PI),
+                activationProgress: random(0.2, config.vineMaxLength) 
+            });
+        }
+      }
+
+      for(let k = 0; k < NUM_VINES; k++) {
+        let pts = curvePoints[k];
+        let cLen = getCurveLength(pts);
+        
+        let firstTouchT = 1.0;
+        let lastTouchT = 0.0;
+        for(let t=0; t<=1; t+=0.01) {
+           let d = getCurveData(t, pts);
+           if(checkInsideHand(d.pos.x, d.pos.y)) {
+               if(firstTouchT === 1.0) firstTouchT = t;
+               lastTouchT = t;
+           }
+        }
+        
+        let nodes = [];
+        for (let i = 0; i < config.vineText.length; i++) {
+          nodes.push({
+            char: config.vineText[i],
+            index: i,
+            isVine: false
+          });
+        }
+
+        let staticLeaves = [];
+        for(let t = firstTouchT; t <= 1.0; t += 0.015) {
+            if (random() > 0.3) { 
+                staticLeaves.push({
+                    t: t,
+                    side: random([-1, 1]),
+                    maxScale: random(config.leafMinSize, config.leafMaxSize),
+                    currentScale: 0,
+                    angleOffset: random(-PI/6, PI/6)
+                });
+            }
+        }
+
+        let flowers = [];
+        
+        // 【核心算法重构】：废除基于蒙版像素判定生成花朵的逻辑，完全采用几何纯数学映射分布
+        // 这样可以确保即使视频主体中间有缝隙，藤蔓上的花朵也绝不会出现断层和空缺
+        
+        let insideTotal = config.flowerCountInside;
+        if (insideTotal > 0 && firstTouchT <= lastTouchT) {
+            for(let i = 0; i < insideTotal; i++) {
+                // 1. 归一化索引
+                let normalized = i / Math.max(1, insideTotal - 1);
+                
+                // 2. 指数分布 (1.4次方)：确保根部极其密集，随着向末梢延伸平滑过渡变稀疏
+                let p = Math.pow(normalized, 1.4); 
+                
+                // 3. 映射到实际的 T 值进度 (首次触碰点 -> 最后触碰点)
+                let t_val = firstTouchT + p * (lastTouchT - firstTouchT);
+                
+                // 4. 加入极微小的随机抖动 (2%)，打破网格死板感，但不破坏连续性
+                let jitter = (random() - 0.5) * ((lastTouchT - firstTouchT) * 0.02);
+                t_val = constrain(t_val + jitter, firstTouchT, lastTouchT);
+
+                // 5. 尺寸跟随进度逐渐缩减到原来的 40%
+                let sizeScale = map(t_val, firstTouchT, 1.0, 1.0, 0.4); 
+
+                flowers.push({
+                    t: t_val,
+                    colorKey: random(['flowerColor1', 'flowerColor2', 'flowerColor3']),
+                    maxSize: random(config.vineFlowerMinSize, config.vineFlowerMaxSize) * sizeScale,
+                    currentSize: 0,
+                    side: random([-1, 1]),
+                    rotOffset: random(TWO_PI),
+                    isActive: false
+                });
+            }
+        }
+
+        let outsideTotal = config.flowerCountOutside;
+        if (outsideTotal > 0 && lastTouchT < 1.0) {
+            for(let i = 0; i < outsideTotal; i++) {
+                let normalized = i / Math.max(1, outsideTotal - 1);
+                let p = Math.pow(normalized, 1.2); 
+                
+                let t_val = lastTouchT + p * (1.0 - lastTouchT);
+                
+                let jitter = (random() - 0.5) * ((1.0 - lastTouchT) * 0.05);
+                t_val = constrain(t_val + jitter, lastTouchT, 1.0);
+
+                let sizeScale = map(t_val, firstTouchT, 1.0, 1.0, 0.35); 
+
+                flowers.push({
+                    t: t_val,
+                    colorKey: random(['flowerColor1', 'flowerColor2', 'flowerColor3']),
+                    maxSize: random(config.vineFlowerMinSize, config.vineFlowerMaxSize) * sizeScale,
+                    currentSize: 0,
+                    side: random([-1, 1]),
+                    rotOffset: random(TWO_PI),
+                    isActive: false
+                });
+            }
+        }
+
+        vines.push({
+          delay: delays[k],
+          progress: 0,
+          curveLen: cLen,
+          pts: pts,
+          vineNodes: nodes,
+          staticLeaves: staticLeaves,
+          flowers: flowers,
+          firstTouchT: firstTouchT
+        });
+      }
+    }
+
+    function checkInsideHand(x, y) {
+      if (!maskGraphics) return false;
+      let w = maskGraphics.width;
+      let h = maskGraphics.height;
+      let pixels = maskGraphics.pixels;
+      
+      if (!pixels || pixels.length === 0) return false;
+      
+      let px = Math.floor(x);
+      let py = Math.floor(y);
+      if (px >= 0 && px < w && py >= 0 && py < h) {
+        let idx = (py * w + px) << 2; 
+        let r = pixels[idx], g = pixels[idx + 1], b = pixels[idx + 2], a = pixels[idx + 3];
+        
+        let brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+        
+        let isTarget = brightness < 128; 
+        if (config.invertMask) isTarget = brightness >= 128; 
+
+        if (a > 128 && isTarget) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function checkDarkArea(cx, cy, radius = 0) {
+      if (!maskGraphics) return false;
+      let w = maskGraphics.width;
+      let h = maskGraphics.height;
+      let pixels = maskGraphics.pixels;
+      if (!pixels || pixels.length === 0) return false;
+      
+      let px = Math.floor(cx);
+      let py = Math.floor(cy);
+
+      for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+              let nx = px + dx;
+              let ny = py + dy;
+              if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                  let idx = (ny * w + nx) << 2;
+                  let r = pixels[idx], g = pixels[idx + 1], b = pixels[idx + 2], a = pixels[idx + 3];
+                  
+                  let brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+                  let isTarget = brightness < 128;
+                  if (config.invertMask) isTarget = brightness >= 128;
+
+                  if (a < 128 || !isTarget) {
+                      return false; 
+                  }
+              } else {
+                  return false;
+              }
+          }
+      }
+      return true;
+    }
+
+    function setup() {
+      let canvas = createCanvas(config.canvasWidth, config.canvasHeight);
+      canvas.parent('canvas-container');
+      
+      maskGraphics = createGraphics(config.canvasWidth, config.canvasHeight);
+      maskGraphics.pixelDensity(1);
+
+      bindUIEvents();
+      initCurvePoints();
+      drawDefaultMask();
+      maskGraphics.loadPixels(); 
+      generateGridParticles(); 
+      initVine();
+    }
+
+    function draw() {
+      background(config.bgColor);
+      let t_time = frameCount * config.floatSpeed;
+
+      let globalOffsetX = (noise(frameCount * 0.005) - 0.5) * config.globalFloatAmp * 2;
+      let globalOffsetY = (noise(frameCount * 0.005 + 100) - 0.5) * config.globalFloatAmp * 2;
+
+      // ----------------------------------------------------
+      // [动态处理]：每帧同步视频画面并计算质心跟踪
+      // ----------------------------------------------------
+      if (sourceMedia && isVideo) {
+          processMediaMask();
+          maskGraphics.loadPixels();
+      }
+
+      // 计算蒙版的真实质心 (Center of Mass)
+      let sumX = 0, sumY = 0, count = 0;
+      let step = 10; // 为了性能，跳跃采样
+      let w = maskGraphics.width;
+      let h = maskGraphics.height;
+      let pixels = maskGraphics.pixels;
+      
+      if (pixels && pixels.length > 0) {
+        for (let y = 0; y < h; y += step) {
+          for (let x = 0; x < w; x += step) {
+            let idx = (y * w + x) << 2;
+            let r = pixels[idx], g = pixels[idx + 1], b = pixels[idx + 2], a = pixels[idx + 3];
+            let brightness = (r * 0.299 + g * 0.587 + b * 0.114);
+            let isTarget = brightness < 128;
+            if (config.invertMask) isTarget = brightness >= 128;
+            if (a > 128 && isTarget) {
+              sumX += x;
+              sumY += y;
+              count++;
+            }
+          }
+        }
+      }
+      
+      // 平滑计算跟踪偏移量
+      if (count > 0) {
+        let targetCX = sumX / count;
+        let targetCY = sumY / count;
+        if (!baseMaskCenter) {
+          baseMaskCenter = {x: targetCX, y: targetCY};
+          currentMaskCenter = {x: targetCX, y: targetCY};
+        } else {
+          currentMaskCenter.x = lerp(currentMaskCenter.x, targetCX, 0.05);
+          currentMaskCenter.y = lerp(currentMaskCenter.y, targetCY, 0.05);
+        }
+        trackOffsetX = (currentMaskCenter.x - baseMaskCenter.x) * config.trackingStrength;
+        trackOffsetY = (currentMaskCenter.y - baseMaskCenter.y) * config.trackingStrength;
+      } else {
+        trackOffsetX = 0;
+        trackOffsetY = 0;
+      }
+
+      // ----------------------------------------------------
+      // 1. 生长进度控制
+      // ----------------------------------------------------
+      let maxTotalLengthNeeded = 0;
+      for (let k = 0; k < NUM_VINES; k++) {
+        let needed = config.vineMaxLength + vines[k].delay + (config.vineText.length * config.vineSpacing) / vines[k].curveLen;
+        if(needed > maxTotalLengthNeeded) maxTotalLengthNeeded = needed;
+      }
+      
+      if (isPlaying && globalVineProgress < maxTotalLengthNeeded) {
+        let currentSpeed = config.vineSpeed * 0.01;
+        globalVineProgress += currentSpeed;
+      }
+
+      let activeRepulsionNodes = [];
+
+      for (let k = 0; k < NUM_VINES; k++) {
+        let v = vines[k];
+        v.progress = Math.max(0, globalVineProgress - v.delay);
+        let branchMaxT = Math.min(v.progress, config.vineMaxLength);
+
+        let spacingT = config.vineSpacing / v.curveLen;
+
+        for (let i = 0; i < v.vineNodes.length; i++) {
+          let vn = v.vineNodes[i];
+          let t_i = v.progress - i * spacingT;
+          
+          let data = getCurveDataExtrapolated(t_i, v);
+
+          vn.rawT = t_i; 
+          vn.pos = p5.Vector.add(data.pos, getWaveOffset(t_i, data.dir)).add(getSwayOffset(t_i, v));
+          vn.dir = data.dir;
+
+          if (!vn.isVine && vn.rawT >= v.firstTouchT) {
+            vn.isVine = true;
+          }
+
+          if (t_i >= 0 && t_i <= branchMaxT) {
+             activeRepulsionNodes.push(vn);
+          }
+        }
+      }
+
+      // ----------------------------------------------------
+      // 2. 渲染动态手掌底层文字阵列
+      // ----------------------------------------------------
+      for (let i = 0; i < particles.length; i++) {
+        let p = particles[i];
+        
+        let isTargetArea = checkDarkArea(p.baseX, p.baseY, config.gapRadius);
+        if (!isTargetArea) {
+            p.visible = false;
+            p.x = p.baseX;
+            p.y = p.baseY;
+            continue;
+        }
+        
+        p.visible = true;
+        let targetX = p.baseX;
+        let targetY = p.baseY;
+
+        for (let vn of activeRepulsionNodes) {
+          // 注意：加入跟踪偏移量 (trackOffsetX/Y) 以便正确对齐视频主体
+          let virtualVineX = vn.pos.x + trackOffsetX - globalOffsetX;
+          let virtualVineY = vn.pos.y + trackOffsetY - globalOffsetY;
+
+          let dx = p.baseX - virtualVineX;
+          let dy = p.baseY - virtualVineY;
+          let dSq = dx * dx + dy * dy;
+          let rSq = config.repelRadius * config.repelRadius;
+
+          if (dSq < rSq) {
+            let d = Math.sqrt(dSq);
+            let t_falloff = 1.0 - (d / config.repelRadius);
+            let ease = t_falloff * t_falloff * (3 - 2 * t_falloff); 
+            let force = ease * config.repelStrength * 40; 
+            
+            targetX += (dx / d) * force;
+            targetY += (dy / d) * force;
+          }
+        }
+        p.x = lerp(p.x, targetX, config.returnSpeed);
+        p.y = lerp(p.y, targetY, config.returnSpeed);
+      }
+
+      push();
+      // 背景文字仅受呼吸偏移影响，无视主体跟踪（因为它们本身就是主体的像素）
+      translate(globalOffsetX, globalOffsetY);
+
+      fill(config.fontColor);
+      textSize(config.fontSize);
+      textAlign(CENTER, CENTER);
+      noStroke();
+      
+      for (let p of particles) {
+        if (p.visible) {
+            text(p.char, p.x, p.y);
+        }
+      }
+      
+      // 核心层级分离：藤蔓及特效必须叠加跟踪偏移量 (trackOffsetX/Y)
+      translate(trackOffsetX, trackOffsetY);
+
+      // ----------------------------------------------------
+      // 3. 渲染藤蔓枝干主躯干
+      // ----------------------------------------------------
+      for (let k = 0; k < NUM_VINES; k++) {
+        let v = vines[k];
+        let branchMaxT = Math.min(v.progress, config.vineMaxLength);
+        let startT = v.firstTouchT; 
+        
+        if (branchMaxT > startT) {
+          let branchPts = [];
+          let step = 0.01; 
+          for (let t = startT; t <= branchMaxT; t += step) {
+            let d = getCurveData(t, v.pts);
+            let p = p5.Vector.add(d.pos, getWaveOffset(t, d.dir)).add(getSwayOffset(t, v));
+            let w = config.vineMaxThickness;
+            
+            let distToTip = branchMaxT - t;
+            let distToStart = t - startT;
+            
+            if (distToTip < 0.1) w = map(distToTip, 0, 0.1, 0, config.vineMaxThickness);
+            if (distToStart < 0.05) w = Math.min(w, map(distToStart, 0, 0.05, 0, config.vineMaxThickness));
+            
+            branchPts.push({ pos: p, dir: d.dir, w: w });
+          }
+          if (branchMaxT % step !== 0) {
+            let d = getCurveData(branchMaxT, v.pts);
+            let p = p5.Vector.add(d.pos, getWaveOffset(branchMaxT, d.dir)).add(getSwayOffset(branchMaxT, v));
+            branchPts.push({ pos: p, dir: d.dir, w: 0 });
+          }
+
+          fill(config.vineBranchColor);
+          noStroke();
+          beginShape();
+          for (let i = 0; i < branchPts.length; i++) {
+            let bp = branchPts[i];
+            let norm = createVector(-bp.dir.y, bp.dir.x).mult(bp.w/2);
+            vertex(bp.pos.x + norm.x, bp.pos.y + norm.y);
+          }
+          for (let i = branchPts.length - 1; i >= 0; i--) {
+            let bp = branchPts[i];
+            let norm = createVector(-bp.dir.y, bp.dir.x).mult(bp.w/2);
+            vertex(bp.pos.x - norm.x, bp.pos.y - norm.y);
+          }
+          endShape(CLOSE);
+        }
+      }
+
+      // ----------------------------------------------------
+      // 4. 渲染节点内容 (入场隐藏逻辑) 与静态叶片
+      // ----------------------------------------------------
+      for (let k = 0; k < NUM_VINES; k++) {
+        let v = vines[k];
+        
+        for (let l of v.staticLeaves) {
+            if (l.t <= config.vineMaxLength && v.progress >= l.t) {
+                l.currentScale = lerp(l.currentScale, l.maxScale, 0.1);
+            } else {
+                l.currentScale = 0;
+            }
+            if (l.currentScale > 0.1) {
+                let baseData = getCurveData(l.t, v.pts);
+                let pos = baseData.pos.copy().add(getWaveOffset(l.t, baseData.dir)).add(getSwayOffset(l.t, v));
+                let angle = baseData.dir.heading() + l.angleOffset;
+                let perp = createVector(-baseData.dir.y, baseData.dir.x).mult(l.side * config.vineMaxThickness / 2);
+                pos.add(perp);
+                
+                fill(config.vineLeafColor);
+                noStroke();
+                drawSlenderLeaf(pos.x, pos.y, angle, l.currentScale);
+            }
+        }
+
+        for (let vn of v.vineNodes) {
+          if (vn.rawT > config.vineMaxLength) continue;
+
+          if (!vn.isVine) {
+            if (globalVineProgress >= v.delay) {
+              fill(config.vineTextColor); 
+              noStroke();
+              textSize(config.vineFontSize);
+              text(vn.char, vn.pos.x, vn.pos.y);
+            }
+          }
+        }
+      }
+
+      // ----------------------------------------------------
+      // 5. 渲染稳定绽放的花朵与生成落花
+      // ----------------------------------------------------
+      let dropProbability = (config.flowerDropRate / 100) * 0.015; 
+
+      for (let k = 0; k < NUM_VINES; k++) {
+        let v = vines[k];
+        for (let f of v.flowers) {
+          if (!f.isActive && f.t <= config.vineMaxLength && v.progress >= f.t + config.flowerDelay) {
+             f.isActive = true; 
+          }
+
+          if (f.isActive) {
+            f.currentSize = lerp(f.currentSize, f.maxSize, 0.05);
+            let baseData = getCurveData(f.t, v.pts);
+            let pos = baseData.pos.copy().add(getWaveOffset(f.t, baseData.dir)).add(getSwayOffset(f.t, v));
+            let perp = createVector(-baseData.dir.y, baseData.dir.x).mult(f.side * (config.vineMaxThickness/2 + f.currentSize*0.4));
+            let finalPos = p5.Vector.add(pos, perp);
+            
+            drawFlower(finalPos.x, finalPos.y, f.currentSize, config[f.colorKey], f.rotOffset, f.t);
+
+            if (f.currentSize > f.maxSize * 0.8 && random() < dropProbability) {
+               fallingFlowers.push({
+                 x: finalPos.x + globalOffsetX + trackOffsetX, // 赋予全局掉落位置
+                 y: finalPos.y + globalOffsetY + trackOffsetY,
+                 vx: random(-0.5, 2.0), 
+                 vy: random(1.0, 2.5),
+                 rot: f.rotOffset,
+                 rotSpeed: random(-0.05, 0.05),
+                 size: f.currentSize * random(0.5, 0.8),
+                 col: config[f.colorKey],
+                 life: 255
+               });
+            }
+          } else {
+            f.currentSize = 0;
+          }
+        }
+      }
+
+      // ----------------------------------------------------
+      // 6. 渲染背景花朵 
+      // ----------------------------------------------------
+      let isAllFinished = globalVineProgress >= maxTotalLengthNeeded;
+      for (let bgf of bgFlowers) {
+        if (globalVineProgress > bgf.activationProgress) {
+          let growSpeed = isAllFinished ? 0.02 : 0.003;
+          bgf.currentSize = lerp(bgf.currentSize, bgf.maxSize, growSpeed);
+        } else {
+          bgf.currentSize = 0;
+        }
+
+        if (bgf.currentSize > 0.5) {
+          drawFlower(bgf.x, bgf.y, bgf.currentSize, config[bgf.colorKey], bgf.rotOffset, 0);
+        }
+      }
+
+      // ----------------------------------------------------
+      // 7. 渲染彩色虚线编辑器UI
+      // ----------------------------------------------------
+      if (config.isEditMode) {
+        drawEditorUI();
+      }
+
+      pop(); // 结束特效漂浮坐标系
+
+      // ----------------------------------------------------
+      // 8. 渲染飘落的花瓣粒子
+      // ----------------------------------------------------
+      for (let i = fallingFlowers.length - 1; i >= 0; i--) {
+        let ff = fallingFlowers[i];
+        ff.x += ff.vx;
+        ff.y += ff.vy;
+        ff.rot += ff.rotSpeed;
+        
+        ff.vx += (noise(ff.x * 0.01, frameCount * 0.01) - 0.5) * 0.4; 
+        ff.life -= 1.2; 
+        
+        if (ff.life > 0) {
+          push();
+          drawingContext.globalAlpha = ff.life / 255.0; 
+          translate(ff.x, ff.y);
+          rotate(ff.rot);
+          fill(ff.col);
+          noStroke();
+          beginShape();
+          vertex(0, 0);
+          bezierVertex(ff.size*0.2, ff.size*0.1, ff.size*0.4, ff.size*0.1, ff.size*0.5, 0);
+          bezierVertex(ff.size*0.4, -ff.size*0.1, ff.size*0.2, -ff.size*0.1, 0, 0);
+          endShape(CLOSE);
+          pop();
+          drawingContext.globalAlpha = 1.0;
+        } else {
+          fallingFlowers.splice(i, 1);
+        }
+      }
+    }
+
+    function drawSlenderLeaf(x, y, angle, length) {
+      push();
+      translate(x, y);
+      rotate(angle);
+      beginShape();
+      vertex(0, 0); 
+      bezierVertex(length * 0.4, -length * 0.18, length * 0.6, -length * 0.12, length, 0); 
+      bezierVertex(length * 0.6, length * 0.12, length * 0.4, length * 0.18, 0, 0);       
+      endShape(CLOSE);
+      pop();
+    }
+
+    function drawFlower(x, y, size, colHex, rotOffset, t_val) {
+      push();
+      translate(x, y);
+      let windRot = sin(frameCount * config.flowerWindSpeed + t_val * 100) * 0.4;
+      rotate(rotOffset + windRot); 
+      
+      fill(colHex);
+      noStroke();
+      let petals = 6;
+      for (let i = 0; i < petals; i++) {
+        push();
+        rotate(TWO_PI / petals * i);
+        beginShape();
+        vertex(0, 0);
+        bezierVertex(size*0.2, size*0.1, size*0.4, size*0.1, size*0.5, 0);
+        bezierVertex(size*0.4, -size*0.1, size*0.2, -size*0.1, 0, 0);
+        endShape(CLOSE);
+        pop();
+      }
+      
+      fill(255, 255, 255, 90);
+      for (let i = 0; i < petals; i++) {
+        push();
+        rotate(TWO_PI / petals * i + PI / petals); 
+        ellipse(size*0.18, 0, size*0.3, size*0.12);
+        pop();
+      }
+
+      fill('#FFD700'); 
+      ellipse(0, 0, size * 0.15, size * 0.15);
+      pop();
+    }
+
+    function drawEditorUI() {
+      for (let k = 0; k < NUM_VINES; k++) {
+        let pts = curvePoints[k];
+        let pCol = color(pointColors[k]);
+        
+        noFill(); 
+        
+        stroke(pCol.levels[0], pCol.levels[1], pCol.levels[2], 180);
+        strokeWeight(2);
+        drawingContext.setLineDash([5, 5]);
+        beginShape();
+        for (let t = 0; t <= 1; t += 0.02) {
+          let pt = getCurveData(t, pts).pos;
+          vertex(pt.x, pt.y);
+        }
+        endShape();
+        drawingContext.setLineDash([]);
+
+        stroke(255, 165, 0, 150);
+        strokeWeight(1);
+        line(pts[0].x, pts[0].y, pts[1].x, pts[1].y);
+        line(pts[2].x, pts[2].y, pts[1].x, pts[1].y);
+        line(pts[2].x, pts[2].y, pts[3].x, pts[3].y);
+        line(pts[4].x, pts[4].y, pts[3].x, pts[3].y);
+        line(pts[4].x, pts[4].y, pts[5].x, pts[5].y);
+        line(pts[6].x, pts[6].y, pts[5].x, pts[5].y);
+
+        for (let i = 0; i < pts.length; i++) {
+          let pt = pts[i];
+          if (pt.type === 'anchor') {
+            fill(pointColors[k]); 
+            stroke(255);
+            strokeWeight(2);
+            ellipse(pt.x, pt.y, 14, 14);
+            fill(255);
+            noStroke();
+            textSize(10);
+            if (i===0) text("入点", pt.x, pt.y - 15);
+            else if (i===2) text("经过点", pt.x, pt.y - 15);
+            else if (i===4) text("经过点", pt.x, pt.y - 15);
+            else if (i===6) text("出点", pt.x, pt.y - 15);
+          } else {
+            fill(255, 165, 0); 
+            stroke(255);
+            strokeWeight(2);
+            rectMode(CENTER);
+            rect(pt.x, pt.y, 12, 12);
+            rectMode(CORNER);
+          }
+        }
+      }
+    }
+
+    function mousePressed() {
+      if (!config.isEditMode || config.lockTrajectory) return;
+      
+      let globalOffsetX = (noise(frameCount * 0.005) - 0.5) * config.globalFloatAmp * 2;
+      let globalOffsetY = (noise(frameCount * 0.005 + 100) - 0.5) * config.globalFloatAmp * 2;
+      
+      for (let k = 0; k < NUM_VINES; k++) {
+        for (let i = 0; i < curvePoints[k].length; i++) {
+          // 在UI识别中加上轨迹偏移量
+          if (dist(mouseX, mouseY, curvePoints[k][i].x + globalOffsetX + trackOffsetX, curvePoints[k][i].y + globalOffsetY + trackOffsetY) < 15) {
+            draggingPoint = curvePoints[k][i];
+            draggingVineIdx = k;
+            return;
+          }
+        }
+      }
+    }
+
+    function mouseDragged() {
+      if (draggingPoint && draggingVineIdx !== -1 && !config.lockTrajectory) {
+        let globalOffsetX = (noise(frameCount * 0.005) - 0.5) * config.globalFloatAmp * 2;
+        let globalOffsetY = (noise(frameCount * 0.005 + 100) - 0.5) * config.globalFloatAmp * 2;
+        
+        draggingPoint.x = constrain(mouseX - globalOffsetX - trackOffsetX, 15, width - 15);
+        draggingPoint.y = constrain(mouseY - globalOffsetY - trackOffsetY, 15, height - 15);
+        vines[draggingVineIdx].curveLen = getCurveLength(curvePoints[draggingVineIdx]);
+        
+        if (globalVineProgress >= config.vineMaxLength) initVine();
+      }
+    }
+
+    function mouseReleased() {
+      if (draggingPoint) {
+        draggingPoint = null;
+        draggingVineIdx = -1;
+        initVine(); 
+      }
+    }
+
+    function processMediaMask() {
+      maskGraphics.background(255); 
+      if (!sourceMedia) return;
+
+      let w = sourceMedia.width;
+      let h = sourceMedia.height;
+      if (w === 0 || h === 0) return; 
+
+      let imgAspect = w / h;
+      let canvasAspect = maskGraphics.width / maskGraphics.height;
+      let drawW, drawH, drawX, drawY;
+
+      if (imgAspect > canvasAspect) {
+        drawW = maskGraphics.width;
+        drawH = drawW / imgAspect;
+        drawX = 0;
+        drawY = (maskGraphics.height - drawH) / 2;
+      } else {
+        drawH = maskGraphics.height;
+        drawW = drawH * imgAspect;
+        drawY = 0;
+        drawX = (maskGraphics.width - drawW) / 2;
+      }
+      maskGraphics.image(sourceMedia, drawX, drawY, drawW, drawH);
+    }
+
+    function drawDefaultMask() {
+      maskGraphics.background(255);
+      maskGraphics.fill(0);
+      maskGraphics.noStroke();
+      let cx = maskGraphics.width / 2;
+      let cy = maskGraphics.height / 2;
+      
+      maskGraphics.push();
+      maskGraphics.translate(cx, cy - 100);
+      maskGraphics.scale(1.4);
+      maskGraphics.rect(-65, 120, 130, 400);
+      maskGraphics.ellipse(0, 80, 160, 180); 
+      maskGraphics.rect(-70, -100, 32, 160, 16); 
+      maskGraphics.rect(-25, -140, 32, 190, 16); 
+      maskGraphics.rect(20, -120, 32, 170, 16); 
+      maskGraphics.rect(65, -60, 32, 110, 16); 
+      maskGraphics.push();
+      maskGraphics.translate(-80, 60);
+      maskGraphics.rotate(-PI/4);
+      maskGraphics.rect(-15, 0, 35, 130, 16); 
+      maskGraphics.pop();
+      maskGraphics.pop();
+    }
+
+    function generateGridParticles() {
+      particles = [];
+      let textLen = config.text.length;
+      let charIndex = 0;
+      let stepX = config.fontSize + config.letterSpacing;
+      let stepY = config.fontSize + config.lineHeight;
+
+      let w = config.canvasWidth;
+      let h = config.canvasHeight;
+
+      for (let y = 10; y < h - 10; y += stepY) {
+        for (let x = 10; x < w - 10; x += stepX) {
+            particles.push({
+              baseX: Math.floor(x), 
+              baseY: Math.floor(y), 
+              x: Math.floor(x),
+              y: Math.floor(y),
+              char: config.text.charAt(charIndex % textLen),
+              offsetY: random(TWO_PI),
+              visible: false 
+            });
+            charIndex++;
+        }
+      }
+    }
+
+    function handleMediaUpload(e) {
+      let file = e.target.files[0];
+      if (file) {
+        let url = URL.createObjectURL(file);
+        
+        if (file.type.startsWith('video/')) {
+            if (sourceMedia && isVideo) sourceMedia.remove();
+            
+            sourceMedia = createVideo(url, () => {
+                sourceMedia.elt.muted = true; 
+                sourceMedia.elt.setAttribute('playsinline', ''); 
+                sourceMedia.loop(); 
+                sourceMedia.hide(); 
+                isVideo = true;
+                
+                processMediaMask();
+                maskGraphics.loadPixels();
+                generateGridParticles();
+                initVine(); 
+                isPlaying = false;
+            });
+        } else {
+            if (sourceMedia && isVideo) sourceMedia.remove();
+            
+            loadImage(url, (img) => {
+                sourceMedia = img;
+                isVideo = false;
+                processMediaMask();
+                maskGraphics.loadPixels();
+                generateGridParticles();
+                initVine(); 
+                isPlaying = false;
+            });
+        }
+      }
+    }
+
+    function bindUIEvents() {
+      const layoutInputs = ['globalFloatAmp', 'repelRadius', 'returnSpeed', 'trackingStrength'];
+      layoutInputs.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            let val = parseFloat(e.target.value);
+            config[id] = val;
+            let display = document.getElementById(`val-${id}`);
+            if (display) display.innerText = val;
+          });
+        }
+      });
+
+      const vineInputs = ['vineMaxLength', 'vineSpeed', 'vineSpacing', 'leafMinSize', 'leafMaxSize', 'flowerCountInside', 'flowerCountOutside', 'bgFlowerCount', 'vineDelay1', 'vineDelay2', 'vineDelay3', 'vineFlowerMinSize', 'vineFlowerMaxSize', 'bgFlowerMinSize', 'bgFlowerMaxSize'];
+      vineInputs.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            config[id] = parseFloat(e.target.value);
+            let display = document.getElementById(`val-${id}`);
+            if (display) display.innerText = config[id];
+            if(id !== 'vineSpeed' && id !== 'vineMaxLength' && id !== 'repelRadius' && id !== 'returnSpeed') {
+                initVine();
+                isPlaying = false; 
+            }
+          });
+        }
+      });
+
+      const colorInputs = ['fontColor', 'bgColor', 'vineBranchColor', 'vineLeafColor', 'flowerColor1', 'flowerColor2', 'flowerColor3', 'vineTextColor'];
+      colorInputs.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            config[id] = e.target.value;
+            if (id === 'bgColor') {
+              document.getElementById('canvas-container').style.backgroundColor = config.bgColor;
+            }
+          });
+        }
+      });
+      
+      let editModeEl = document.getElementById('editMode');
+      if (editModeEl) {
+        editModeEl.addEventListener('change', (e) => {
+          config.isEditMode = e.target.checked;
+        });
+      }
+      
+      let lockEl = document.getElementById('lockTrajectory');
+      if (lockEl) {
+        lockEl.addEventListener('change', (e) => {
+          config.lockTrajectory = e.target.checked;
+        });
+      }
+      
+      let invertMaskEl = document.getElementById('invertMask');
+      if (invertMaskEl) {
+        invertMaskEl.addEventListener('change', (e) => {
+          config.invertMask = e.target.checked;
+          initVine();
+          isPlaying = false;
+        });
+      }
+
+      const resizeInputs = ['canvasWidth', 'canvasHeight'];
+      resizeInputs.forEach(id => {
+        let el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('change', (e) => {
+            config[id] = parseInt(e.target.value);
+            resizeCanvas(config.canvasWidth, config.canvasHeight);
+            maskGraphics = createGraphics(config.canvasWidth, config.canvasHeight);
+            maskGraphics.pixelDensity(1);
+            if (sourceMedia) {
+              processMediaMask();
+            } else {
+              drawDefaultMask();
+            }
+            maskGraphics.loadPixels();
+            initCurvePoints(); 
+            generateGridParticles();
+            initVine();
+            isPlaying = false; 
+          });
+        }
+      });
+
+      let imgUploadEl = document.getElementById('mediaUpload');
+      if (imgUploadEl) imgUploadEl.addEventListener('change', handleMediaUpload);
+      
+      let btnPlayEl = document.getElementById('btnPlay');
+      if (btnPlayEl) btnPlayEl.addEventListener('click', () => {
+          isPlaying = true;
+      });
+
+      let btnResetEl = document.getElementById('btnReset');
+      if (btnResetEl) btnResetEl.addEventListener('click', () => {
+          initVine();
+          isPlaying = false; 
+      });
+    }
+  </script>
+</body>
+</html>

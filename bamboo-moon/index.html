@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>击空明兮溯流光 - 梦幻粒子水月 (暗夜竹影版)</title>
+    <title>击空明兮溯流光 - 梦幻粒子水月 (超清性能版)</title>
     <!-- 引入 p5.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
     <!-- 引入 dat.gui 参数面板库 -->
@@ -45,9 +45,9 @@
         topWaveAmp: 2.3,          // 撤离版面，固定 2.3
         bottomWaveAmp: 12.0,      // 撤离版面，固定 12
 
-        // 动态水波与光点系统 (全部保留版面并保持默认值)
-        waveFreq: 0.025, 
-        waveSpeed: 14.3, 
+        // 动态水波与光点系统 (全部保留版面并按要求更新默认值)
+        waveFreq: 0.02,           // 固定默认值为 0.02
+        waveSpeed: 7.0,           // 固定默认值为 7.0
         waveLineBright: 45, 
         waveLineDark: 2, 
         crestDotFreq: 0.025, 
@@ -68,15 +68,15 @@
         shadowMinSize: 40,      
         shadowMaxSize: 90,      
         
-        // 物理拖拽交互参数 (已按要求更新默认值)
-        rippleIntensity: 7.0,     // 单击波纹强度
-        wakeIntensity: 1.7,       // 拖拽尾迹强度
-        dragRadius: 30,           // 拖拽吸附半径
-        dragProbability: 0.18,    // 粒子被吸附概率
-        dragCluster: 27,          // 吸附后分散范围
-        dragForce: 0.33,          // 粒子拖拽跟随力度
-        dropRate: 0.15,           // 拖拽时脱落速度
-        gatherSpeed: 0.025        // 松开后回聚速度
+        // 物理拖拽交互参数 (保持之前要求的固定默认值)
+        rippleIntensity: 7.0,     
+        wakeIntensity: 1.7,       
+        dragRadius: 30,           
+        dragProbability: 0.18,    
+        dragCluster: 27,          
+        dragForce: 0.33,          
+        dropRate: 0.15,           
+        gatherSpeed: 0.025        
     };
 
     const CONFIG = { w: 600, h: 800, colorTop: '#02050A', colorBottom: '#0D1E26', moonY: 480, moonRadius: 185, timeScale: 0.001 };
@@ -91,6 +91,9 @@
         canvasW = max(10, canvasW);
         canvasH = max(10, canvasH);
         createCanvas(canvasW, canvasH);
+        
+        // 核心修复：强制开启高分屏(Retina)的物理像素级渲染，彻底解决“低像素/发虚”问题
+        pixelDensity(displayDensity()); 
         
         let scaleRatio = canvasW / CONFIG.w;
         CONFIG.moonRadius *= scaleRatio;
@@ -166,8 +169,71 @@
         env.drawFilmGrain();
     }
 
-    function mousePressed() { if(branch && branch.worldTip) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, false)); }
-    function mouseDragged() { if(branch && branch.worldTip && frameCount % 3 === 0) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, true)); }
+    // === 新增/修改：鼠标与移动端触摸独立交互逻辑 ===
+    let touchHoldTimer = null;
+    let isTouchDragMode = false;
+    let touchStartX = 0, touchStartY = 0;
+
+    function mousePressed() { 
+        if (touches.length > 0) return; // 移动端交由 touchStarted 处理，防止双重触发
+        if(branch && branch.worldTip) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, false)); 
+    }
+    
+    function mouseDragged() { 
+        if (touches.length > 0) return; // 移动端交由 touchMoved 处理
+        if(branch && branch.worldTip && frameCount % 3 === 0) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, true)); 
+    }
+
+    function touchStarted(event) {
+        if (touches.length > 0) {
+            // 让竹枝瞬间吸附到触摸点
+            if (branch) { branch.x = touches[0].x; branch.y = touches[0].y; branch.worldTip.x = touches[0].x; branch.worldTip.y = touches[0].y; }
+            
+            // 触摸等同于单次点击（产生涟漪）
+            if(branch && branch.worldTip) ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, false));
+            
+            isTouchDragMode = false;
+            touchStartX = touches[0].x;
+            touchStartY = touches[0].y;
+            
+            // 开启 3 秒长按倒计时
+            clearTimeout(touchHoldTimer);
+            touchHoldTimer = setTimeout(() => {
+                isTouchDragMode = true;
+                // 长按 3 秒触发成功后，给一个明显的视觉反馈（大涟漪）
+                if(branch && branch.worldTip) {
+                    let r = new Ripple(branch.worldTip.x, branch.worldTip.y, false);
+                    r.amp *= 1.5; 
+                    ripples.push(r);
+                }
+            }, 3000);
+        }
+        // 仅在点击画布时阻止默认滑动行为，避免影响右上角 dat.gui 控制面板的使用
+        if (event && event.target && event.target.tagName === 'CANVAS') return false;
+    }
+
+    function touchMoved(event) {
+        if (touches.length > 0) {
+            if (!isTouchDragMode) {
+                // 如果在 3 秒内滑动距离超过20像素，则取消长按拖拽判定
+                if (dist(touches[0].x, touches[0].y, touchStartX, touchStartY) > 20) {
+                    clearTimeout(touchHoldTimer);
+                }
+            } else {
+                // 拖拽模式已激活，随指尖产生尾迹
+                if(branch && branch.worldTip && frameCount % 3 === 0) {
+                    ripples.push(new Ripple(branch.worldTip.x, branch.worldTip.y, true));
+                }
+            }
+        }
+        if (event && event.target && event.target.tagName === 'CANVAS') return false;
+    }
+
+    function touchEnded(event) {
+        clearTimeout(touchHoldTimer);
+        isTouchDragMode = false; // 抬手退出拖拽模式
+        if (event && event.target && event.target.tagName === 'CANVAS') return false;
+    }
 
     // ==========================================
     // 物理涟漪与波纹系统
@@ -213,6 +279,7 @@
             let gw = max(10, width);
             let gh = max(10, height);
             this.grainGraphics = createGraphics(gw, gh);
+            this.grainGraphics.pixelDensity(1); // 噪点层为了性能强制 1倍即可，底层没必要超清
             this.grainGraphics.noStroke();
             for (let i = 0; i < 12000; i++) {
                 this.grainGraphics.fill(255, 255, 255, random(3, 10));
@@ -229,11 +296,11 @@
             let dots = []; 
             noFill();
             
-            for (let y = 0; y < height; y += 15) {
+            for (let y = 0; y < height; y += 20) {
                 let globalFade = map(y, 0, height, 0.1, 1);
                 
                 beginShape();
-                for (let x = 0; x <= width + 10; x += 10) {
+                for (let x = 0; x <= width + 15; x += 15) {
                     let disp = getWaterDisplacement(x, y, globalTime * 3.0) * 0.5;
                     let normDisp = constrain(disp / (PARAMS.bottomWaveAmp * 0.5 + 0.1), -1, 1);
                     let bright = map(normDisp, -0.7, 0.7, PARAMS.waveLineBright, PARAMS.waveLineDark, true);
@@ -358,7 +425,7 @@
     }
 
     // ==========================================
-    // 水月粒子系统 (结合水波与鼠标拖拽物理引擎)
+    // 水月粒子系统 (性能优化与超清锐化版)
     // ==========================================
     class MoonReflection {
         constructor() { this.particles = []; this.initParticles(); }
@@ -366,7 +433,8 @@
         initParticles() {
             this.particles = [];
             let r = CONFIG.moonRadius;
-            let baseCount = (r * r * PI) * 0.2 * PARAMS.particleDensity; 
+            
+            let baseCount = (r * r * PI) * 0.035 * PARAMS.particleDensity; 
             let falloffPower = map(PARAMS.centerDensity, 0, 1, 0.0, 5.0);
             
             for (let i = 0; i < baseCount; i++) {
@@ -398,11 +466,14 @@
                     col = v > 0.5 ? color('#E2E6F2') : (v > 0.3 ? color('#FDF8ED') : color('#F5F5F5'));
                 }
 
+                let precalcAlpha = (1 - Math.pow(distRatio, 0.6)) * 255; 
+
                 this.particles.push({ 
                     baseX: px, baseY: py, color: col, distRatio: distRatio, noiseOffset: random(1000),
                     ox: 0, oy: 0, vx: 0, vy: 0, 
                     isDragged: false, dragOffsetX: 0, dragOffsetY: 0,
-                    mobility: random(), dragCooldown: 0 
+                    mobility: random(), dragCooldown: 0,
+                    baseAlpha: precalcAlpha 
                 });
             }
         }
@@ -426,7 +497,14 @@
             ctx.restore();
 
             let bTip = branch ? branch.worldTip : null;
-            let isPressing = mouseIsPressed;
+            
+            // 兼容移动端长按拖拽模式与PC端直接点击模式
+            let isPressing = false;
+            if (touches.length > 0) {
+                isPressing = isTouchDragMode; // 移动端只有长按3秒激活后才能吸附粒子
+            } else {
+                isPressing = mouseIsPressed;  // PC端依旧保持按下即吸附
+            }
 
             for (let p of this.particles) {
                 let targetX = cx + p.baseX; 
@@ -474,23 +552,18 @@
                 p.ox += p.vx;
                 p.oy += p.vy;
 
-                let nx = p.baseX / r; let ny = p.baseY / (r * 0.7); 
-                let nz = sqrt(max(0, 1 - nx * nx - ny * ny));
-                let dotProduct = nx * -0.65 + ny * -0.35 + nz * 0.67;
-                let shadeMult = map(dotProduct, -0.6, 0.9, lerp(1.0, 0.1, PARAMS.sphereShading), lerp(1.0, 1.3, PARAMS.sphereShading), true);
-
                 let waveOffset = getWaterDisplacement(targetX + p.ox, targetY + p.oy, globalTime * 2.0);
                 
                 let finalX = targetX + p.ox + waveOffset * 1.5; 
                 let finalY = targetY + p.oy + waveOffset * 0.3;
 
                 let shimmer = noise(p.noiseOffset + globalTime);
-                let edgeAlpha = (1 - Math.pow(p.distRatio, map(PARAMS.feather, 0, 1, 4.0, 0.6))) * 255;
+                let edgeAlpha = p.baseAlpha; 
                 
                 let isDisplaced = abs(p.ox) > 5 || abs(p.oy) > 5;
                 
                 if ((edgeAlpha > 5 && shimmer > 0.3) || isDisplaced) {
-                    let renderAlpha = constrain(edgeAlpha * PARAMS.brightness * shimmer * shadeMult, 0, 255);
+                    let renderAlpha = constrain(edgeAlpha * PARAMS.brightness * shimmer, 0, 255);
                     
                     if (isDisplaced) {
                         ctx.globalCompositeOperation = 'lighter';
@@ -503,7 +576,10 @@
                     }
                     
                     ctx.save(); ctx.translate(finalX, finalY); ctx.rotate(waveOffset * 0.05); 
-                    let sz = PARAMS.particleSize;
+                    
+                    // 【核心修复】降低放大系数到 1.25，防止过度虚化
+                    let sz = PARAMS.particleSize * 1.25; 
+                    
                     let pW = sz * random(1.2, 1.8); let pH = sz * random(0.6, 1.0);
                     let soft = PARAMS.particleSoftness;
 
@@ -511,13 +587,14 @@
                         if(isDisplaced) {
                             fill(255, 250, 240, renderAlpha * (1.0 - soft * 0.6));
                             ellipse(0, 0, pW * (1.0 + soft * 1.5), pH * (1.0 + soft * 1.5));
-                            fill(255, 255, 255, constrain(renderAlpha * 1.2, 0, 255));
-                            ellipse(0, 0, pW * 0.4, pH * 0.4);
+                            // 提升内核心的亮度，并设置最小 1.2px 的安全尺寸，使其始终锐利可见
+                            fill(255, 255, 255, constrain(renderAlpha * 1.5, 0, 255));
+                            ellipse(0, 0, max(1.2, pW * 0.5), max(1.2, pH * 0.5));
                         } else {
                             p.color.setAlpha(renderAlpha * (1.0 - soft * 0.6)); fill(p.color);
                             ellipse(0, 0, pW * (1.0 + soft * 1.5), pH * (1.0 + soft * 1.5));
-                            p.color.setAlpha(constrain(renderAlpha * 1.2, 0, 255)); fill(p.color);
-                            ellipse(0, 0, pW * 0.4, pH * 0.4);
+                            p.color.setAlpha(constrain(renderAlpha * 1.5, 0, 255)); fill(p.color);
+                            ellipse(0, 0, max(1.2, pW * 0.5), max(1.2, pH * 0.5));
                         }
                     } else {
                         ellipse(0, 0, pW, pH);
@@ -618,7 +695,15 @@
 
         draw() {
             let targetX = mouseX || width / 2, targetY = mouseY || height / 2;
-            if (!this.initialized && mouseX !== 0) { this.x = targetX; this.y = targetY; this.initialized = true; }
+            
+            // 优先使用移动端触摸坐标
+            if (touches.length > 0) { 
+                targetX = touches[0].x; 
+                targetY = touches[0].y; 
+            }
+            
+            // 初始化及位置更新
+            if (!this.initialized && (mouseX !== 0 || touches.length > 0)) { this.x = targetX; this.y = targetY; this.initialized = true; }
             this.x = lerp(this.x, targetX, 0.08); this.y = lerp(this.y, targetY, 0.08);
             this.targetAngle = constrain((targetX - this.x) * 0.003, -0.15, 0.15) + sin(globalTime * 1.5) * 0.015;
             this.angle = lerp(this.angle, this.targetAngle, 0.1);

@@ -30,16 +30,31 @@
     let moonImg = null;
     let imgLoaded = false;
 
-    // 整合所有功能的全局参数
+    // 整合所有功能的全局参数 (已根据要求固定部分参数并清理版面)
     const PARAMS = {
-        brightness: 3.0, feather: 0.8, particleDensity: 0.9, denseArea: 0.54, centerDensity: 0.57,
-        particleSize: 1.0, particleSoftness: 0.35, haloIntensity: 0.96, haloSpread: 1.2,
-        topWaveAmp: 2.3, bottomWaveAmp: 12.0, waveFreq: 0.025, waveSpeed: 14.3, sphereShading: 0.75,
+        brightness: 3.0,          // 保留版面，默认 3.0
+        feather: 1.0,             // 撤离版面，固定 1
+        particleDensity: 1.6,     // 撤离版面，固定 1.6
+        denseArea: 0.58,          // 保留版面，固定默认 0.58
+        centerDensity: 0.53,      // 撤离版面，固定 0.53
+        particleSize: 1.0,        // 撤离版面，固定 1
+        particleSoftness: 0.29,   // 撤离版面，固定 0.29
+        haloIntensity: 1.0,       // 撤离版面，固定 1
+        haloSpread: 1.4,          // 撤离版面，固定 1.4
+        sphereShading: 0.0,       // 撤离版面，固定 0
+        topWaveAmp: 2.3,          // 撤离版面，固定 2.3
+        bottomWaveAmp: 12.0,      // 撤离版面，固定 12
+
+        // 动态水波与光点系统 (全部保留版面并保持默认值)
+        waveFreq: 0.025, 
+        waveSpeed: 14.3, 
+        waveLineBright: 45, 
+        waveLineDark: 2, 
+        crestDotFreq: 0.025, 
+        crestDotBright: 180, 
+        crestDotHalo: 14,
         
-        waveLineBright: 45, waveLineDark: 2, 
-        crestDotFreq: 0.025, crestDotBright: 180, crestDotHalo: 14,
-        
-        // 暗夜竹枝专属参数
+        // 前景竹枝与交互 (全部保留版面并保持默认值)
         bambooColor: '#122b1c', 
         jointLength: 50,        
         branchThick: 7.0,       
@@ -48,25 +63,25 @@
         leafMaxSize: 35,        
         branchAngle: -144,      
         
-        // 新增：背景竹影系统参数
-        shadowCount: 8,         // 竹影树的数量
-        shadowMinSize: 40,      // 竹影初始最小分段长
-        shadowMaxSize: 90,      // 竹影初始最大分段长
+        // 背景竹影系统参数 (全部保留版面并保持默认值)
+        shadowCount: 8,         
+        shadowMinSize: 40,      
+        shadowMaxSize: 90,      
         
-        rippleIntensity: 20, wakeIntensity: 6,
-        
-        // 物理拖拽交互参数
-        dragRadius: 60,      
-        dragForce: 0.15,     
-        gatherSpeed: 0.04,   
-        dragProbability: 0.15, 
-        dragCluster: 30,
-        dropRate: 0.02       
+        // 物理拖拽交互参数 (已按要求更新默认值)
+        rippleIntensity: 7.0,     // 单击波纹强度
+        wakeIntensity: 1.7,       // 拖拽尾迹强度
+        dragRadius: 30,           // 拖拽吸附半径
+        dragProbability: 0.18,    // 粒子被吸附概率
+        dragCluster: 27,          // 吸附后分散范围
+        dragForce: 0.33,          // 粒子拖拽跟随力度
+        dropRate: 0.15,           // 拖拽时脱落速度
+        gatherSpeed: 0.025        // 松开后回聚速度
     };
 
     const CONFIG = { w: 600, h: 800, colorTop: '#02050A', colorBottom: '#0D1E26', moonY: 480, moonRadius: 185, timeScale: 0.001 };
 
-    let bgShadows; // 新增全局变量存储背景竹影系统
+    let bgShadows; 
 
     function setup() {
         let h = windowHeight > 0 ? windowHeight : (window.innerHeight || 800);
@@ -92,19 +107,9 @@
         
         let moonFolder = gui.addFolder('水月粒子渲染参数');
         moonFolder.add(PARAMS, 'brightness', 0.5, 3.0).name('全局亮度');
-        moonFolder.add(PARAMS, 'feather', 0.0, 1.0).name('边缘羽化');
-        moonFolder.add(PARAMS, 'particleDensity', 0.3, 2.5).name('粒子密度').onChange(() => { if(moonRef) moonRef.initParticles(); });
         moonFolder.add(PARAMS, 'denseArea', 0.0, 1.0).name('密集区范围').onChange(() => { if(moonRef) moonRef.initParticles(); });
-        moonFolder.add(PARAMS, 'centerDensity', 0.0, 1.0).name('边缘稀疏度').onChange(() => { if(moonRef) moonRef.initParticles(); });
-        moonFolder.add(PARAMS, 'particleSize', 0.5, 6.0).name('粒子大小');
-        moonFolder.add(PARAMS, 'particleSoftness', 0.0, 1.0).name('单粒子虚化度');
-        moonFolder.add(PARAMS, 'haloIntensity', 0.0, 3.0).name('光晕强度');
-        moonFolder.add(PARAMS, 'haloSpread', 1.0, 4.0).name('光晕范围');
-        moonFolder.add(PARAMS, 'sphereShading', 0.0, 1.0).name('立体阴影强度');
 
         let waveFolder = gui.addFolder('动态水波与光点系统');
-        waveFolder.add(PARAMS, 'topWaveAmp', 0.0, 5.0).name('顶部微波幅度');
-        waveFolder.add(PARAMS, 'bottomWaveAmp', 2.0, 30.0).name('底部剧波幅度');
         waveFolder.add(PARAMS, 'waveFreq', 0.005, 0.08).name('水波频率');
         waveFolder.add(PARAMS, 'waveSpeed', 0.1, 25.0).name('水波流速'); 
         waveFolder.add(PARAMS, 'waveLineBright', 0, 150).name('波峰线条亮度');
@@ -127,12 +132,10 @@
         branchFolder.add(PARAMS, 'leafMaxSize', 15, 60).name('最大竹叶').onChange(() => { if(branch) branch.initBranch(); });
         branchFolder.add(PARAMS, 'branchAngle', -180, 180).name('朝向角度').onChange(() => { if(branch) branch.initBranch(); });
         
-        // 新增：背景水底竹影控制组
         let shadowFolder = gui.addFolder('背景水底竹影');
         shadowFolder.add(PARAMS, 'shadowCount', 0, 20).step(1).name('竹影分布数量').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
         shadowFolder.add(PARAMS, 'shadowMinSize', 20, 80).name('最小初始段长').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
         shadowFolder.add(PARAMS, 'shadowMaxSize', 50, 200).name('最大初始段长').onChange(() => { if(bgShadows) bgShadows.initShadows(); });
-        // shadowFolder.open(); 
 
         let interactFolder = gui.addFolder('物理交互 (水波与碎月)');
         interactFolder.add(PARAMS, 'rippleIntensity', 0, 40).name('单击波纹强度');
@@ -141,14 +144,14 @@
         interactFolder.add(PARAMS, 'dragProbability', 0.01, 1.0).name('粒子被吸附概率');
         interactFolder.add(PARAMS, 'dragCluster', 0, 100).name('吸附后分散范围');
         interactFolder.add(PARAMS, 'dragForce', 0.01, 0.4).name('粒子拖拽跟随力度');
-        interactFolder.add(PARAMS, 'dropRate', 0.0, 0.15).name('拖拽时脱落速度'); 
-        interactFolder.add(PARAMS, 'gatherSpeed', 0.01, 0.15).name('松开后回聚速度');
+        interactFolder.add(PARAMS, 'dropRate', 0.0, 0.3).name('拖拽时脱落速度'); 
+        interactFolder.add(PARAMS, 'gatherSpeed', 0.005, 0.15).name('松开后回聚速度');
         
         env = new Environment();
         moonRef = new MoonReflection();
         floatingParticles = new ParticleSystem();
         branch = new BambooBranch(); 
-        bgShadows = new ShadowSystem(); // 初始化竹影系统
+        bgShadows = new ShadowSystem(); 
         noCursor();
     }
 
@@ -221,8 +224,6 @@
             drawingContext.fillStyle = this.bgGradient;
             noStroke(); rect(0, 0, width, height);
 
-            // 【新增】：在绘制水波反光线之前，先绘制水底的竹影
-            // 这样竹影就会完美融入水中，且水波的光点会叠加在它们上方
             if (bgShadows) bgShadows.draw();
 
             let dots = []; 
@@ -267,7 +268,7 @@
     }
 
     // ==========================================
-    // 新增：背景水底竹影系统
+    // 背景水底竹影系统
     // ==========================================
     class ShadowSystem {
         constructor() { 
@@ -279,17 +280,16 @@
             this.leaves = [];
             
             for (let i = 0; i < PARAMS.shadowCount; i++) {
-                // 随机选择画面四个边缘之一作为竹影起点
                 let edge = floor(random(4));
                 let x, y, angle;
                 if (edge === 0) { 
-                    x = random(width); y = -20; angle = random(PI*0.3, PI*0.7); // 顶部向下伸
+                    x = random(width); y = -20; angle = random(PI*0.3, PI*0.7); 
                 } else if (edge === 1) { 
-                    x = width + 20; y = random(height); angle = random(PI*0.7, PI*1.3); // 右侧向左伸
+                    x = width + 20; y = random(height); angle = random(PI*0.7, PI*1.3); 
                 } else if (edge === 2) { 
-                    x = random(width); y = height + 20; angle = random(-PI*0.7, -PI*0.3); // 底部向上伸
+                    x = random(width); y = height + 20; angle = random(-PI*0.7, -PI*0.3); 
                 } else { 
-                    x = -20; y = random(height); angle = random(-PI*0.3, PI*0.3); // 左侧向右伸
+                    x = -20; y = random(height); angle = random(-PI*0.3, PI*0.3); 
                 }
 
                 let len = random(PARAMS.shadowMinSize, PARAMS.shadowMaxSize);
@@ -299,7 +299,6 @@
         }
 
         generateTree(x, y, angle, len, thick, depth) {
-            // 控制深度，防止竹影过度遮挡中间区域
             if (depth > 4) return;
             
             let endAngle = angle + random(-0.08, 0.08);
@@ -332,17 +331,14 @@
 
         draw() {
             strokeCap(PROJECT);
-            // 绘制竹枝阴影 (黑灰色，半透明，融入水色)
             stroke(2, 4, 8, 140);
             for (let s of this.segments) {
-                // 应用全局水波偏移，使阴影随水波动
                 let d1 = getWaterDisplacement(s.x1, s.y1, globalTime * 3.0) * 0.5;
                 let d2 = getWaterDisplacement(s.x2, s.y2, globalTime * 3.0) * 0.5;
                 strokeWeight(s.thick);
                 line(s.x1, s.y1 + d1, s.x2, s.y2 + d2);
             }
             
-            // 绘制竹叶阴影
             noStroke();
             fill(2, 4, 8, 160);
             for (let l of this.leaves) {
@@ -576,10 +572,7 @@
             this.segments = []; this.leaves = [];
             this.tipPoint = createVector(0, 0);
             
-            // 将参数设置的角度转为弧度
             let angleRad = radians(PARAMS.branchAngle);
-            
-            // 开始递归生成竹子，深度限定为5节
             this.generateTree(0, 0, angleRad, PARAMS.jointLength, PARAMS.branchThick, 0, true);
             
             let offX = -this.tipPoint.x, offY = -this.tipPoint.y;
@@ -589,19 +582,16 @@
 
         generateTree(x, y, angle, len, thick, depth, isMain) {
             if (depth > 5) return;
-            // 竹子比较挺拔，角度变化极小
             let endAngle = angle + random(-0.06, 0.06); 
             let endX = x + cos(endAngle) * len, endY = y + sin(endAngle) * len;
             
             this.segments.push({ p1: createVector(x, y), p2: createVector(endX, endY), thick: thick, angle: endAngle });
             if (isMain) this.tipPoint = createVector(endX, endY);
 
-            // 竹叶更倾向于在末端竹节处长出 (呈现"个"字簇状)
             let leafProb = map(depth, 0, 5, 0.1, 1.0) * PARAMS.leafDensity;
             if (random() < leafProb) {
                 let leafCount = floor(random(1, 4 * PARAMS.leafDensity));
                 for (let i = 0; i < leafCount; i++) {
-                    // 为叶片赋予略有差异的深绿色
                     let baseCol = color(PARAMS.bambooColor);
                     baseCol.setRed(red(baseCol) + random(-10, 15));
                     baseCol.setGreen(green(baseCol) + random(-10, 20));
@@ -609,7 +599,6 @@
                     
                     this.leaves.push({ 
                         pos: createVector(endX, endY), 
-                        // 竹叶方向通常与竹节方向有一个斜角展开
                         angle: endAngle + random(-PI/2.5, PI/2.5), 
                         len: random(PARAMS.leafMinSize, PARAMS.leafMaxSize), 
                         color: baseCol 
@@ -618,10 +607,7 @@
             }
 
             if (depth < 5) {
-                // 主干竹节延续
                 this.generateTree(endX, endY, endAngle + random(-0.05, 0.05), len * random(0.85, 0.95), max(1, thick * random(0.8, 0.9)), depth + 1, isMain);
-                
-                // 竹子在节点处容易分叉生出细小侧枝
                 if (random() < 0.6) {
                     let dir = random() > 0.5 ? 1 : -1;
                     let forkAngle = endAngle + dir * random(0.2, 0.5); 
@@ -639,29 +625,23 @@
             this.worldTip.x = this.x; this.worldTip.y = this.y;
 
             drawingContext.save(); translate(this.x, this.y); rotate(this.angle);
-            // 给竹子增加微弱环境阴影，融入夜色
             drawingContext.shadowColor = 'rgba(0, 0, 0, 0.6)'; drawingContext.shadowBlur = 12;
             
-            // 解析颜色，分别用于竹身主体、柱状高光和竹节横纹
             let bColor = color(PARAMS.bambooColor);
             let hlColor = color(red(bColor)*1.3, green(bColor)*1.3, blue(bColor)*1.3);
             let nodeColor = color(red(bColor)*0.4, green(bColor)*0.4, blue(bColor)*0.4);
 
             for (let s of this.segments) {
-                // 画竹筒主体
                 stroke(bColor); strokeWeight(s.thick); strokeCap(PROJECT);
                 line(s.p1.x, s.p1.y, s.p2.x, s.p2.y);
                 
-                // 画竹筒圆柱反光（让竹子显得立体硬朗）
                 if (s.thick > 2) { 
                     stroke(hlColor); strokeWeight(s.thick * 0.25); 
-                    // 顺着竹身略微偏移一点
                     let hx = cos(s.angle + PI/2) * s.thick * 0.2;
                     let hy = sin(s.angle + PI/2) * s.thick * 0.2;
                     line(s.p1.x + hx, s.p1.y + hy, s.p2.x + hx, s.p2.y + hy); 
                 }
 
-                // 画明显的竹节(凸起的深色横线)
                 stroke(nodeColor); strokeWeight(s.thick * 1.5); strokeCap(ROUND);
                 let nx = cos(s.angle + PI/2) * s.thick * 0.55;
                 let ny = sin(s.angle + PI/2) * s.thick * 0.55;
@@ -669,15 +649,13 @@
             }
             drawingContext.shadowColor = 'transparent'; 
 
-            // 绘制竹叶（锋利的剑形贝塞尔曲线）
             noStroke();
             for (let l of this.leaves) { 
                 push(); translate(l.pos.x, l.pos.y); rotate(l.angle); 
                 fill(l.color); 
                 beginShape();
                 vertex(0, 0);
-                let lw = l.len * 0.18; // 叶片宽度大概是长度的18%
-                // 绘制狭长的剑形竹叶
+                let lw = l.len * 0.18; 
                 bezierVertex(lw, l.len/3, lw, l.len*2/3, 0, l.len);
                 bezierVertex(-lw, l.len*2/3, -lw, l.len/3, 0, 0);
                 endShape(CLOSE);
